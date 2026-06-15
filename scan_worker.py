@@ -163,7 +163,7 @@ class ScanWorker:
     def _save(self, wavelengths, rows, p) -> str:
         save_dir  = p.get("save_dir", "./data")
         filename  = p.get("filename", "scan_data")
-        delimiter = p.get("delimiter", "\t")
+        delimiter = p.get("delimiter", ";")
         timestamp = p.get("timestamp_in_filename", True)
     
         os.makedirs(save_dir, exist_ok=True)
