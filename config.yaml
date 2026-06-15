@@ -5,9 +5,9 @@
 motors:
   steps_per_revolution: 200        # native full steps per rev
   microstep_divisor: 1            # match your driver DIP settings (1/16)
-  steps_per_degree: 0.555          # = (200 * 16) / 360  -- auto-calculated at runtime too
-  max_speed_steps_per_sec: 300    # pulse rate cap
-  step_pulse_us: 10                # step pulse width in microseconds (sent to Arduino)
+  steps_per_degree: 0.555          # auto-calculated at runtime too
+  max_speed_steps_per_sec: 100    # pulse rate cap
+  step_pulse_us: 50                # step pulse width in microseconds (sent to Arduino)
   direction:
     motor1_invert: false           # flip if motor runs backwards
     motor2_invert: false
@@ -19,25 +19,25 @@ motors:
 
 spectrometer:
   model_hint: "USB2000+"           # informational only; seabreeze auto-detects
-  default_integration_time_ms: 100
-  default_scans_to_average: 3
-  default_boxcar_width: 2
+  default_integration_time_ms: 100 # absolute minimum allowed for USB2000+ spectrometer
+  default_scans_to_average: 3      
+  default_boxcar_width: 2          # not typically needed
   wavelength_min_nm: 200           # crop range for saved data
   wavelength_max_nm: 1100
 
 sourcemeter:
-  visa_resource: "USB0::0x05E6::0x2461::04491463::0::INSTR"  # replace serial
+  visa_resource: "USB0::0x05E6::0x2461::04491463::0::INSTR"  # replace serial // this is legacy since NI-VISA handles the connection automatically
   default_voltage_v: 5.0
   default_current_limit_a: 0.1
   source_mode: "VOLT"              # VOLT or CURR
-  settle_time_ms: 200              # wait after output ON before collecting spectrum
+  settle_time_ms: 200              # wait after output ON before collecting spectrum (milliseconds)
   nplc: 1.0                        # integration time in power-line cycles
 
 # ─────────────────────────────────────────────
 #  Scan Defaults (overridden by GUI)
 # ─────────────────────────────────────────────
 scan:
-  angle_start_deg: 0.0
+  angle_start_deg: -90
   angle_end_deg: 90.0
   angle_step_deg: 5.0
 
@@ -48,6 +48,6 @@ data:
   default_filename: "scan_data"
   default_save_dir: "./data"
   timestamp_in_filename: true
-  delimiter: "\t"
+  delimiter: ";"
   write_raw_counts: true
   write_dark_corrected: true
