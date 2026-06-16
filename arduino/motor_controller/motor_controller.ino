@@ -1,130 +1,142 @@
 /*
- * motor_controller.ino
+ * motor_controller_accel.ino
  * ─────────────────────────────────────────────────────────────────────
- * Controls two step/dir stepper motor drivers from an Arduino Nano.
- *
- * Serial protocol (115200 baud, newline-terminated):
- *
- *  MOVE <motor> <steps> <dir>
- *      motor : 1 or 2
- *      steps : integer number of steps
- *      dir   : 0 or 1
- *      reply : "OK\n" when motion complete
- *
- *  SPEED <steps_per_sec>
- *      Sets step pulse rate (applies to both motors)
- *      reply : "OK\n"
- *
- *  STOP
- *      Immediately halt all motion
- *      reply : "OK\n"
- *
- *  HOME
- *      Drive both motors to position 0 (software zero)
- *      reply : "OK\n"
- *
- *  ZERO
- *      Set current position as zero for both motors
- *      reply : "OK\n"
- *
- *  STATUS
- *      reply : "POS <pos1> <pos2>\n"
- *
- *  PING
- *      reply : "PONG\n"
+ * Controls two step/dir stepper motor drivers from an Arduino Nano
+ * using the AccelStepper library.
+ * * Serial protocol remains identical to the original specification.
  * ─────────────────────────────────────────────────────────────────────
  */
+
+#include <AccelStepper.h>
 
 // ── Pin Definitions ──────────────────────────────────────────────────
 #define M1_STEP_PIN   2
 #define M1_DIR_PIN    3
 #define M2_STEP_PIN   4
 #define M2_DIR_PIN    5
-
-// Optional enable pin (LOW = enabled on most drivers)
 #define M1_EN_PIN     6
 #define M2_EN_PIN     7
 
 // ── Globals ──────────────────────────────────────────────────────────
-volatile bool stopFlag = false;
+// Initialize AccelStepper objects in step/dir mode (DRIVER)
+AccelStepper stepper1(AccelStepper::DRIVER, M1_STEP_PIN, M1_DIR_PIN);
+AccelStepper stepper2(AccelStepper::DRIVER, M2_STEP_PIN, M2_DIR_PIN);
 
-long pos1 = 0;   // software position tracking (steps)
-long pos2 = 0;
-
-unsigned int stepPulseUs   = 50;     // step HIGH pulse width
-unsigned long stepPeriodUs = 5000;    // full period between steps (~200 steps/s)
+// State tracking to handle asynchronous "OK" replies
+enum MotionState { IDLE, WAIT_M1, WAIT_M2, WAIT_HOME };
+MotionState currentMotion = IDLE;
 
 // ─────────────────────────────────────────────────────────────────────
 void setup() {
-  pinMode(M1_STEP_PIN, OUTPUT);
-  pinMode(M1_DIR_PIN,  OUTPUT);
-  pinMode(M2_STEP_PIN, OUTPUT);
-  pinMode(M2_DIR_PIN,  OUTPUT);
-  pinMode(M1_EN_PIN,   OUTPUT);
-  pinMode(M2_EN_PIN,   OUTPUT);
-
-  // Enable drivers
-  digitalWrite(M1_EN_PIN, LOW);
-  digitalWrite(M2_EN_PIN, LOW);
-
-  // Safe initial state
-  digitalWrite(M1_STEP_PIN, LOW);
-  digitalWrite(M2_STEP_PIN, LOW);
-
   Serial.begin(115200);
+
+  // Configure Enable pins (active LOW is standard for drivers like A4988/TMC2209)
+  stepper1.setEnablePin(M1_EN_PIN);
+  stepper1.setPinsInverted(false, false, true); // (dir, step, enable)
+  stepper1.enableOutputs();
+
+  stepper2.setEnablePin(M2_EN_PIN);
+  stepper2.setPinsInverted(false, false, true);
+  stepper2.enableOutputs();
+
+  // Default speed and acceleration profiles
+  stepper1.setMaxSpeed(200.0);
+  stepper1.setAcceleration(1000.0); 
+  stepper2.setMaxSpeed(200.0);
+  stepper2.setAcceleration(1000.0);
+
   Serial.println("READY");
 }
 
 // ─────────────────────────────────────────────────────────────────────
 void loop() {
+  // Service motor step generation
+  stepper1.run();
+  stepper2.run();
+
+  // Handle serial reporting for completed motions
+  checkMotionCompletion();
+
+  // Process incoming commands
   if (Serial.available()) {
     String line = Serial.readStringUntil('\n');
     line.trim();
-    handleCommand(line);
+    if (line.length() > 0) {
+      handleCommand(line);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+void checkMotionCompletion() {
+  if (currentMotion == IDLE) return;
+
+  bool m1Done = (stepper1.distanceToGo() == 0);
+  bool m2Done = (stepper2.distanceToGo() == 0);
+
+  if (currentMotion == WAIT_M1 && m1Done) {
+    Serial.println("OK");
+    currentMotion = IDLE;
+  } 
+  else if (currentMotion == WAIT_M2 && m2Done) {
+    Serial.println("OK");
+    currentMotion = IDLE;
+  } 
+  else if (currentMotion == WAIT_HOME && m1Done && m2Done) {
+    Serial.println("OK");
+    currentMotion = IDLE;
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────
 void handleCommand(String cmd) {
   if (cmd.startsWith("MOVE")) {
-    // MOVE <motor> <steps> <dir>
     int m, steps, dir;
-    sscanf(cmd.c_str(), "MOVE %d %d %d", &m, &steps, &dir);
-    stopFlag = false;
-    doMove(m, steps, (bool)dir);
-    Serial.println("OK");
+    if (sscanf(cmd.c_str(), "MOVE %d %d %d", &m, &steps, &dir) == 3) {
+      long targetSteps = (dir == 1) ? steps : -steps;
+      if (m == 1) {
+        stepper1.move(targetSteps);
+        currentMotion = WAIT_M1;
+      } else if (m == 2) {
+        stepper2.move(targetSteps);
+        currentMotion = WAIT_M2;
+      }
+    } else {
+      Serial.println("ERR invalid MOVE syntax");
+    }
 
   } else if (cmd.startsWith("SPEED")) {
-    unsigned long spd;
-    sscanf(cmd.c_str(), "SPEED %lu", &spd);
-    if (spd > 0) {
-      stepPeriodUs = 1000000UL / spd;
-      if (stepPeriodUs < (unsigned long)(stepPulseUs * 2))
-        stepPeriodUs = (unsigned long)(stepPulseUs * 2);
+    float spd;
+    if (sscanf(cmd.c_str(), "SPEED %f", &spd) == 1 && spd > 0) {
+      stepper1.setMaxSpeed(spd);
+      stepper2.setMaxSpeed(spd);
+      Serial.println("OK");
+    } else {
+      Serial.println("ERR invalid SPEED syntax");
     }
-    Serial.println("OK");
 
   } else if (cmd == "STOP") {
-    stopFlag = true;
+    // Calculates a new target position that stops the motor as quickly as possible
+    stepper1.stop();
+    stepper2.stop();
     Serial.println("OK");
+    currentMotion = IDLE;
 
   } else if (cmd == "HOME") {
-    // Drive back to position zero
-    stopFlag = false;
-    goHome(1);
-    goHome(2);
-    Serial.println("OK");
+    stepper1.moveTo(0);
+    stepper2.moveTo(0);
+    currentMotion = WAIT_HOME;
 
   } else if (cmd == "ZERO") {
-    pos1 = 0;
-    pos2 = 0;
+    stepper1.setCurrentPosition(0);
+    stepper2.setCurrentPosition(0);
     Serial.println("OK");
 
   } else if (cmd == "STATUS") {
     Serial.print("POS ");
-    Serial.print(pos1);
+    Serial.print(stepper1.currentPosition());
     Serial.print(" ");
-    Serial.println(pos2);
+    Serial.println(stepper2.currentPosition());
 
   } else if (cmd == "PING") {
     Serial.println("PONG");
@@ -132,36 +144,4 @@ void handleCommand(String cmd) {
   } else {
     Serial.println("ERR unknown command");
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────
-void doMove(int motor, int steps, bool direction) {
-  uint8_t stepPin = (motor == 1) ? M1_STEP_PIN : M2_STEP_PIN;
-  uint8_t dirPin  = (motor == 1) ? M1_DIR_PIN  : M2_DIR_PIN;
-
-  digitalWrite(dirPin, direction ? HIGH : LOW);
-  delayMicroseconds(5);   // dir setup time
-
-  for (int i = 0; i < steps; i++) {
-    if (stopFlag) break;
-
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(stepPulseUs);
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(stepPeriodUs - stepPulseUs);
-
-    // Track position
-    if (motor == 1) pos1 += (direction ? 1 : -1);
-    else            pos2 += (direction ? 1 : -1);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────
-void goHome(int motor) {
-  long* pos = (motor == 1) ? &pos1 : &pos2;
-  if (*pos == 0) return;
-
-  bool dir = (*pos < 0);   // go opposite direction of offset
-  long steps = abs(*pos);
-  doMove(motor, (int)steps, dir);
 }
