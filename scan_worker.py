@@ -118,22 +118,34 @@ class ScanWorker:
                 self.sourcemeter.output_on()
                 self._check_stop()
 
-                # ── Collect spectrum ──────────────────────────────────
-                wl, raw, corr = self.spectrometer.acquire(
-                    subtract_dark=subtract_dark)
-                measured = self.sourcemeter.measure()
-                self._status(f"  Measured: {measured:.4f}  "
-                             f"(peak corr: {corr.max():.1f} cts)")
+                # 1. Capture both measured Voltage and Current
+                # (measure() only returns one quantity, so we query both explicitly)
+                meas_v = float(self.sourcemeter._query(":MEAS:VOLT?").split(",")[0].strip())
+                meas_i = float(self.sourcemeter._query(":MEAS:CURR?").split(",")[0].strip())
 
-                # ── Power OFF ─────────────────────────────────────────
+                # 2. Capture compliance status explicitly as 0 or 1
+                try:
+                    qsr = int(self.sourcemeter._query(":STAT:QUES:COND?"))
+                    bit_mask = 0b10 if self.sourcemeter.source_mode == "VOLT" else 0b01
+                    comp_flag = int(bool(qsr & bit_mask))
+                except Exception:
+                    comp_flag = 0
+
+                # 3. Collect spectrum
+                wl, raw, corr = self.spectrometer.acquire(subtract_dark=subtract_dark)
+                if all_wavelengths is None:        #remove if affects real scan, here for the mock
+                    all_wavelengths = wl         #remove if affects real scan, here for the mock
+                self._status(f"  Measured: V={meas_v:.4f}, I={meas_i:.6f}  (peak corr: {corr.max():.1f} cts)")
+
+                # 4. Power OFF
                 self.sourcemeter.output_off()
                 self._status(f"  Output OFF")
 
-                # Store
-                if all_wavelengths is None:
-                    all_wavelengths = wl
-                row = [angle, measured] + raw.tolist() + corr.tolist()
+                # 5. Build row matching _save()'s expected format:
+                # [angle, V, I, comp, raw..., corr...]
+                row = [angle, meas_v, meas_i, comp_flag] + raw.tolist() + corr.tolist()
                 data_rows.append(row)
+
 
                 # Notify GUI
                 if "on_spectrum" in self.cb:
@@ -142,10 +154,14 @@ class ScanWorker:
                     self.cb["on_progress"](i + 1, total, angle)
 
             # ── Save data ─────────────────────────────────────────────
-            path = self._save(all_wavelengths, data_rows, p)
-            self._status(f"Scan complete. Data saved to:\n  {path}")
+            path_spec, path_src = self._save(all_wavelengths, data_rows, p)
+            self._status(
+                f"Scan complete.\n"
+                f"  Spectra    : {path_spec}\n"
+                f"  Sourcemeter: {path_src}"
+            )
             if "on_finished" in self.cb:
-                self.cb["on_finished"](path)
+                self.cb["on_finished"]((path_spec, path_src))
 
         except InterruptedError as e:
             self._status(f"Scan interrupted: {e}")
@@ -161,76 +177,114 @@ class ScanWorker:
 
     # ── Data saving ───────────────────────────────────────────────────
     def _save(self, wavelengths, rows, p) -> str:
-        save_dir  = p.get("save_dir", "./data")
-        filename  = p.get("filename", "scan_data")
-        delimiter = p.get("delimiter", ";")
-        timestamp = p.get("timestamp_in_filename", True)
-    
+        save_dir             = p.get("save_dir", "./data")
+        filename_spectrum    = p.get("filename", "scan_data")
+        filename_sourcemeter = filename_spectrum + "_sourcemeter"
+        delimiter            = p.get("delimiter", ";")
+        timestamp            = p.get("timestamp_in_filename", True)
+
         os.makedirs(save_dir, exist_ok=True)
-    
+
         if timestamp:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fname = f"{filename}_{ts}.txt"
+            ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname_spec = f"{filename_spectrum}_{ts}.txt"
+            fname_src  = f"{filename_sourcemeter}_{ts}.txt"
         else:
-            fname = f"{filename}.txt"
-    
-        full_path = os.path.join(save_dir, fname)
-    
+            fname_spec = f"{filename_spectrum}.txt"
+            fname_src  = f"{filename_sourcemeter}.txt"   # ← was missing in else branch
+
+        full_path_spectrum    = os.path.join(save_dir, fname_spec)
+        full_path_sourcemeter = os.path.join(save_dir, fname_src)
+
+        # ── Sanity check pixel count against actual data ──────────────────
         wl = wavelengths
         n  = len(wl)
-    
-        # ── Sanity check: all rows must match the wavelength length ───────
+
         for i, row in enumerate(rows):
-            # row = [angle, voltage, current, compliance, raw×n, corr×n]
-            expected = 4 + 2 * n
+            expected = 4 + 2 * n          # angle, V, I, comp, raw×n, corr×n
             if len(row) != expected:
-                actual_n = (len(row) - 4) // 2
-                # Trim the wavelength array to match the data
-                print(f"Warning: row {i} has {len(row)} cols, "
-                      f"expected {expected}. "
-                      f"Trimming wavelengths {n} → {actual_n}")
-                n  = actual_n
+                n_actual = (len(row) - 4) // 2
+                log.warning("Row %d has %d cols, expected %d — "
+                            "trimming wavelengths %d → %d",
+                            i, len(row), expected, n, n_actual)
+                n  = n_actual
                 wl = wavelengths[:n]
                 break
-            
-        header_lines = [
-            f"# Spectroscopy Scan Data",
-            f"# Date       : {datetime.now().isoformat()}",
-            f"# Angles     : {p['angle_start']} to {p['angle_end']} "
+
+        now = datetime.now().isoformat()
+
+        # ── Spectrometer file ─────────────────────────────────────────────
+        header_spectrum = [
+            f"# Spectroscopy Scan Data — Spectrometer",
+            f"# Date             : {now}",
+            f"# Angles           : {p['angle_start']} to {p['angle_end']} "
             f"step {p['angle_step']} deg",
-            f"# Source mode: {self.sourcemeter.source_mode}",
-            f"# Voltage    : {self.sourcemeter.voltage} V",
-            f"# Curr limit : {self.sourcemeter.current_limit} A",
-            f"# Int. time  : {self.spectrometer.integration_time_ms} ms",
-            f"# Averages   : {self.spectrometer.scans_to_average}",
-            f"# Boxcar     : {self.spectrometer.boxcar_width}",
-            f"# Dark sub.  : {p.get('subtract_dark', True)}",
-            f"# Wavelength range: {wl[0]:.2f} - {wl[-1]:.2f} nm",
-            f"# Pixels     : {n}",
+            f"# Int. time        : {self.spectrometer.integration_time_ms} ms",
+            f"# Averages         : {self.spectrometer.scans_to_average}",
+            f"# Boxcar           : {self.spectrometer.boxcar_width}",
+            f"# Dark subtraction : {p.get('subtract_dark', True)}",
+            f"# Wavelength range : {wl[0]:.2f} - {wl[-1]:.2f} nm",
+            f"# Pixels           : {n}",
             f"#",
             f"# Column layout:",
-            f"#  Col 0      : Angle (deg)",
-            f"#  Col 1      : Voltage (V)",
-            f"#  Col 2      : Current (A)",
-            f"#  Col 3      : In compliance (0/1)",
-            f"#  Col 4..{n+3}  : Raw counts per wavelength pixel",
-            f"#  Col {n+4}..{2*n+3}: Dark-corrected counts per wavelength pixel",
+            f"#  Col 0          : Angle (deg)",
+            f"#  Col 1..{n}      : Raw counts per wavelength pixel",
+            f"#  Col {n+1}..{2*n} : Dark-corrected counts per wavelength pixel",
             f"#",
-            "# wavelength_nm: " + delimiter.join(f"{w:.4f}" for w in wl),
+            "# wavelength_nm; " + delimiter.join(f"{w:.4f}" for w in wl),
         ]
-    
-        col_names = (
-            ["angle_deg", "voltage_V", "current_A", "in_compliance"] +
+
+        col_names_spectrum = (
+            ["angle_deg"] +                      
             [f"raw_{i}"  for i in range(n)] +
             [f"corr_{i}" for i in range(n)]
         )
-    
-        with open(full_path, "w") as f:
-            f.write("\n".join(header_lines) + "\n")
-            f.write(delimiter.join(col_names) + "\n")
+
+        with open(full_path_spectrum, "w") as f:
+            f.write("\n".join(header_spectrum) + "\n")
+            f.write(delimiter.join(col_names_spectrum) + "\n")
             for row in rows:
-                # trim row to expected length in case of any mismatch
-                f.write(delimiter.join(f"{v:.6g}" for v in row[:4 + 2 * n]) + "\n")
-    
-        log.info("Data saved to %s", full_path)
-        return full_path
+                angle = row[0]
+                raw   = row[4        : 4 + n]
+                corr  = row[4 + n    : 4 + 2 * n]
+                out   = [angle] + raw + corr
+                f.write(delimiter.join(f"{v:.6g}" for v in out) + "\n")
+
+        log.info("Spectrum data saved to %s", full_path_spectrum)
+
+        # ── Sourcemeter file ──────────────────────────────────────────────
+        header_sourcemeter = [
+            f"# Spectroscopy Scan Data — Source Meter",
+            f"# Date             : {now}",
+            f"# Angles           : {p['angle_start']} to {p['angle_end']} "
+            f"step {p['angle_step']} deg",
+            f"# Source mode      : {self.sourcemeter.source_mode}",
+            f"# Voltage setpoint : {self.sourcemeter.voltage} V",
+            f"# Current limit    : {self.sourcemeter.current_limit} A",
+            f"#",
+            f"# Column layout:",
+            f"#  Col 0 : Angle (deg)",
+            f"#  Col 1 : Measured voltage (V)",
+            f"#  Col 2 : Measured current (A)",
+            f"#  Col 3 : In compliance (0=no 1=yes)",
+        ]
+
+        col_names_sourcemeter = [
+            "angle_deg", "voltage_V", "current_A", "in_compliance"
+        ]
+
+        with open(full_path_sourcemeter, "w") as f:
+            f.write("\n".join(header_sourcemeter) + "\n")   # ← was header_lines (undefined)
+            f.write(delimiter.join(col_names_sourcemeter) + "\n")
+            for row in rows:
+                angle  = row[0]
+                volt   = row[1]
+                curr   = row[2]
+                comp   = row[3]
+                f.write(delimiter.join(
+                    f"{v:.6g}" for v in [angle, volt, curr, comp]) + "\n")
+
+        log.info("Sourcemeter data saved to %s", full_path_sourcemeter)
+
+        # Return both paths as a tuple
+        return full_path_spectrum, full_path_sourcemeter

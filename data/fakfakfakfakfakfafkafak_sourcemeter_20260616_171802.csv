@@ -1,0 +1,25 @@
+# Spectroscopy Scan Data — Source Meter
+# Date             : 2026-06-16T17:18:02.137829
+# Angles           : 0.0 to 55.0 step 5.0 deg
+# Source mode      : VOLT
+# Voltage setpoint : 1.0 V
+# Current limit    : 0.1 A
+#
+# Column layout:
+#  Col 0 : Angle (deg)
+#  Col 1 : Measured voltage (V)
+#  Col 2 : Measured current (A)
+#  Col 3 : In compliance (0=no 1=yes)
+angle_deg;voltage_V;current_A;in_compliance
+0;1;0.020015;0
+5;1;0.019974;0
+10;1;0.02;0
+15;1;0.020016;0
+20;1;0.020009;0
+25;1;0.019981;0
+30;1;0.019996;0
+35;1;0.019997;0
+40;1;0.020011;0
+45;1;0.020009;0
+50;1;0.01999;0
+55;1;0.020023;0

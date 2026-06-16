@@ -2,7 +2,7 @@
 gui.py
 ───────────────────────────────────────────────────────────────────────
 Main GUI — PyQt5
-Run:  python gui.py
+Run:  python gui.py <- this is the "main program" for the goniometer software
 """
 
 import sys
@@ -30,8 +30,16 @@ matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from hardware import MotorController, Spectrometer, SourceMeter, SourceMeterError
+# Custom module imports------------------------------------------------------------
+# ── Real hardware ──────────────────────────────────────────────────
+#from hardware import MotorController, Spectrometer, SourceMeter, SourceMeterError
+
+# Fake hardware for testing
+from hardware_mock import MotorController, Spectrometer, SourceMeter, SourceMeterError
+
 from scan_worker import ScanWorker
+
+
 
 # ── Logging to GUI ────────────────────────────────────────────────────
 log = logging.getLogger()
@@ -603,10 +611,31 @@ class MainWindow(QMainWindow):
     #  Spectrometer controls
     # ─────────────────────────────────────────────────────────────────
     def _apply_spec_settings(self):
-        if self.spec:
-            self.spec.set_integration_time(self.spn_inttime.value())
+        if not self.spec:
+            return
+        try:
+            actual_integration_time = self.spec.set_integration_time(self.spn_inttime.value())
+
+            # Snap the spinner back to whatever was actually set
+            # (in case it was clamped)
+            self.spn_inttime.blockSignals(True)
+            self.spn_inttime.setValue(actual_integration_time)
+            self.spn_inttime.blockSignals(False)
+
             self.spec.set_scans_to_average(self.spn_avg.value())
             self.spec.set_boxcar_width(self.spn_boxcar.value())
+
+        except ValueError as e:
+            # Show the limit error and snap spinner to the clamped value
+            QMessageBox.warning(self, "Integration Time Out of Range", str(e))
+
+            # Update spinner to the clamped value the device is now using
+            self.spn_inttime.blockSignals(True)
+            self.spn_inttime.setValue(self.spec.integration_time_ms)
+            self.spn_inttime.blockSignals(False)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Spectrometer Error", str(e))
 
     def _collect_dark(self):
         if not self.spec:
@@ -840,13 +869,19 @@ class MainWindow(QMainWindow):
     def _on_status(self, msg: str):
         self.lbl_status.setText(msg[:80])
 
-    def _on_finished(self, path):
+    def _on_finished(self, paths):
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.progress.setValue(100)
-        if path:
-            QMessageBox.information(self, "Scan Complete",
-                                    f"Data saved to:\n{path}")
+
+        if paths:
+            path_spec, path_src = paths
+            QMessageBox.information(
+                self, "Scan Complete",
+                f"Data saved:\n\n"
+                f"Spectra:\n  {path_spec}\n\n"
+                f"Sourcemeter:\n  {path_src}"
+            )
         else:
             self.lbl_status.setText("Scan stopped")
 

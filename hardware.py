@@ -186,7 +186,13 @@ class Spectrometer:
     # ── Settings ──────────────────────────────────────────────────────
     def set_integration_time(self, ms: float):
         self.integration_time_ms = ms
-        if self._spec:
+        if self.integration_time_ms < 100: #hard limit of the OceanOptics USB2000+ spectrometer (milliseconds)
+            raise ValueError(
+            f"Integration time {ms:.2f} ms is below the minimum "
+            f"allowed by this device ({self._min_inttime_ms:.2f} ms).\n"
+            f"Value must be at least 100 ms."
+        )
+        elif self._spec:
             self._spec.integration_time_micros(int(ms * 1000))
 
     def set_scans_to_average(self, n: int):
