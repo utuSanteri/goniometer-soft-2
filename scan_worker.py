@@ -175,7 +175,7 @@ class ScanWorker:
             if "on_error" in self.cb:
                 self.cb["on_error"](e)
 
-    # ── Data saving ───────────────────────────────────────────────────
+# ── Data saving ───────────────────────────────────────────────────
     def _save(self, wavelengths, rows, p) -> str:
         save_dir             = p.get("save_dir", "./data")
         filename_spectrum    = p.get("filename", "scan_data")
@@ -191,7 +191,7 @@ class ScanWorker:
             fname_src  = f"{filename_sourcemeter}_{ts}.txt"
         else:
             fname_spec = f"{filename_spectrum}.txt"
-            fname_src  = f"{filename_sourcemeter}.txt"   # ← was missing in else branch
+            fname_src  = f"{filename_sourcemeter}.txt"
 
         full_path_spectrum    = os.path.join(save_dir, fname_spec)
         full_path_sourcemeter = os.path.join(save_dir, fname_src)
@@ -226,28 +226,32 @@ class ScanWorker:
             f"# Wavelength range : {wl[0]:.2f} - {wl[-1]:.2f} nm",
             f"# Pixels           : {n}",
             f"#",
-            f"# Column layout:",
-            f"#  Col 0          : Angle (deg)",
-            f"#  Col 1..{n}      : Raw counts per wavelength pixel",
-            f"#  Col {n+1}..{2*n} : Dark-corrected counts per wavelength pixel",
-            f"#",
-            "# wavelength_nm; " + delimiter.join(f"{w:.4f}" for w in wl),
+            f"# Row layout:",
+            f"#  Row 1              : Wavelengths (nm) with 'angle_deg' in col 0",
+            f"#  Rows 2 to {len(rows)+1}       : Raw counts per angle",
+            f"#  Rows {len(rows)+2} to {2*len(rows)+1} : Corrected counts per angle",
+            f"#"
         ]
-
-        col_names_spectrum = (
-            ["angle_deg"] +                      
-            [f"raw_{i}"  for i in range(n)] +
-            [f"corr_{i}" for i in range(n)]
-        )
 
         with open(full_path_spectrum, "w") as f:
             f.write("\n".join(header_spectrum) + "\n")
-            f.write(delimiter.join(col_names_spectrum) + "\n")
+            
+            # Row 1: Wavelengths
+            wavelength_row = ["angle_deg"] + [f"{w:.4f}" for w in wl]
+            f.write(delimiter.join(wavelength_row) + "\n")
+
+            # Rows 2 to N: Raw counts
             for row in rows:
                 angle = row[0]
-                raw   = row[4        : 4 + n]
-                corr  = row[4 + n    : 4 + 2 * n]
-                out   = [angle] + raw + corr
+                raw   = row[4 : 4 + n]
+                out   = [angle] + raw
+                f.write(delimiter.join(f"{v:.6g}" for v in out) + "\n")
+
+            # Rows N+1 to M: Corrected counts
+            for row in rows:
+                angle = row[0]
+                corr  = row[4 + n : 4 + 2 * n]
+                out   = [angle] + corr
                 f.write(delimiter.join(f"{v:.6g}" for v in out) + "\n")
 
         log.info("Spectrum data saved to %s", full_path_spectrum)
@@ -274,7 +278,7 @@ class ScanWorker:
         ]
 
         with open(full_path_sourcemeter, "w") as f:
-            f.write("\n".join(header_sourcemeter) + "\n")   # ← was header_lines (undefined)
+            f.write("\n".join(header_sourcemeter) + "\n")
             f.write(delimiter.join(col_names_sourcemeter) + "\n")
             for row in rows:
                 angle  = row[0]
