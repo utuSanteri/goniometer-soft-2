@@ -22,38 +22,38 @@ supports both real instruments and mock replacements for development and testing
 
 
 goniometer-soft-2/
-├── config.yaml              # All instrument and scan settings
-├── run.py                   # Optional convenience launcher
-├── scan_worker.py           # Background thread that runs the scan loop
-├── hardware_mock.py         # Mock instrument classes for offline testing
+├── config.yaml           # All instrument and scan settings
+├── run.py                # Optional convenience launcher
+├── scan_worker.py        # Background thread that runs the scan loop
+├── hardware_mock.py      # Mock instrument classes for offline testing
 │
-├── hardware/                # Hardware abstraction layer
-│   ├── init.py          # Re-exports: MotorController, Spectrometer, SourceMeter, SourceMeterError
-│   ├── _base.py             # Abstract base classes (ABCs) for all instrument categories
-│   ├── _visa.py             # Shared NI-VISA resource manager loader
-│   ├── motor.py             # Arduino-based motor controller (serial)
-│   ├── spectrometer.py      # OceanOptics spectrometer (seabreeze)
-│   └── sourcemeter.py       # Keithley 2461 source meter (VISA/SCPI)
+├── hardware/             # Hardware abstraction layer
+│   ├── __init__.py       # Re-exports: MotorController, Spectrometer, SourceMeter, SourceMeterError
+│   ├── _base.py          # Abstract base classes (ABCs) for all instrument categories
+│   ├── _visa.py          # Shared NI-VISA resource manager loader
+│   ├── motor.py          # Arduino-based motor controller (serial)
+│   ├── spectrometer.py   # OceanOptics spectrometer (seabreeze)
+│   └── sourcemeter.py    # Keithley 2461 source meter (VISA/SCPI)
 │
-└── gui/                     # PyQt5 GUI package
-├── init.py           # Re-exports: MainWindow, load_config
-├── main.py           # Entry point for python -m gui
-├── main_window.py        # Main window — owns tabs, plots, scan lifecycle
-├── state.py              # HardwareState — shared mutable container
-├── bridge.py             # ScanBridge — worker thread → GUI Qt signals
-├── hw_imports.py         # Single place to swap real/mock hardware
-├── util.py               # Config loader
-├── tabs/
-│   ├── init.py
-│   ├── connect_tab.py    # Instrument connection management
-│   ├── spectrometer_tab.py  # Acquisition settings, dark spectrum, preview
-│   ├── source_tab.py     # Source meter config, output control, verification
-│   ├── scan_tab.py       # Angle scan parameters, file settings, start/stop
-│   └── manual_tab.py     # Manual motor jog, position readout, single acquisition
-└── widgets/
-├── init.py
-├── plot_panel.py     # Matplotlib spectrum plot (right panel)
-└── log_panel.py      # Read-only log text box + logging handler
+└── gui/                  # PyQt5 GUI package
+    ├── __init__.py       # Re-exports: MainWindow, load_config
+    ├── main.py           # Entry point for python -m gui
+    ├── main_window.py    # Main window — owns tabs, plots, scan lifecycle
+    ├── state.py          # HardwareState — shared mutable container
+    ├── bridge.py         # ScanBridge — worker thread → GUI Qt signals
+    ├── hw_imports.py     # Single place to swap real/mock hardware
+    ├── util.py           # Config loader
+    ├── tabs/
+    │   ├── __init__.py
+    │   ├── connect_tab.py        # Instrument connection management
+    │   ├── spectrometer_tab.py   # Acquisition settings, dark spectrum, preview
+    │   ├── source_tab.py         # Source meter config, output control, verification
+    │   ├── scan_tab.py           # Angle scan parameters, file settings, start/stop
+    │   └── manual_tab.py         # Manual motor jog, position readout, single acquisition
+    └── widgets/
+        ├── __init__.py
+        ├── plot_panel.py   # Matplotlib spectrum plot (right panel)
+        └── log_panel.py    # Read-only log text box + logging handler
 
 
 
