@@ -106,14 +106,15 @@ void handleCommand(String cmd) {
     }
 
   } else if (cmd.startsWith("SPEED")) {
-    float spd;
-    if (sscanf(cmd.c_str(), "SPEED %f", &spd) == 1 && spd > 0) {
-      stepper1.setMaxSpeed(spd);
-      stepper2.setMaxSpeed(spd);
-      Serial.println("OK");
-    } else {
-      Serial.println("ERR invalid SPEED syntax");
-    }
+      int spd; // Change to int
+      // Parse using %d instead of %f
+      if (sscanf(cmd.c_str(), "SPEED %d", &spd) == 1 && spd > 0) { 
+        stepper1.setMaxSpeed((float)spd); // Cast to float for AccelStepper
+        stepper2.setMaxSpeed((float)spd);
+        Serial.println("OK");
+      } else {
+        Serial.println("ERR invalid SPEED syntax");
+      }
 
   } else if (cmd == "STOP") {
     // Calculates a new target position that stops the motor as quickly as possible
