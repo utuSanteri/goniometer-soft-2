@@ -87,26 +87,26 @@ class SpectrometerTab(QWidget):
         if not self.hw.spec:
             return
         try:
-            actual_integration_time = self.hw.spec.set_integration_time(
-                self.spn_inttime.value())
-
+            self.hw.spec.set_integration_time(self.spn_inttime.value())
+    
+            # Snap spinner to whatever the device is actually using
+            # (in case the value was clamped)
             self.spn_inttime.blockSignals(True)
-            self.spn_inttime.setValue(actual_integration_time)
+            self.spn_inttime.setValue(self.hw.spec.integration_time_ms)
             self.spn_inttime.blockSignals(False)
-
+    
             self.hw.spec.set_scans_to_average(self.spn_avg.value())
             self.hw.spec.set_boxcar_width(self.spn_boxcar.value())
-
+    
         except ValueError as e:
             QMessageBox.warning(
                 self, "Integration Time Out of Range", str(e))
             self.spn_inttime.blockSignals(True)
             self.spn_inttime.setValue(self.hw.spec.integration_time_ms)
             self.spn_inttime.blockSignals(False)
-
+    
         except Exception as e:
             QMessageBox.critical(self, "Spectrometer Error", str(e))
-
     # ── Private ───────────────────────────────────────────────────────
     def _collect_dark(self):
         if not self.hw.spec:
