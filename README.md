@@ -21,6 +21,7 @@ supports both real instruments and mock replacements for development and testing
 ## Project Structure
 
 
+```
 goniometer-soft-2/
 ├── config.yaml           # All instrument and scan settings
 ├── run.py                # Optional convenience launcher
@@ -55,7 +56,7 @@ goniometer-soft-2/
         ├── plot_panel.py   # Matplotlib spectrum plot (right panel)
         └── log_panel.py    # Read-only log text box + logging handler
 
-
+```
 
 ---
 
