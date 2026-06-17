@@ -3,7 +3,7 @@
 # ─────────────────────────────────────────────
 
 motors:
-  steps_per_revolution: 200        # native full steps per rev
+  steps_per_revolution: 800        # native full steps per rev
   microstep_divisor: 1            # match your driver DIP settings (1/16)
   steps_per_degree: 0.555          # auto-calculated at runtime too
   max_speed_steps_per_sec: 100    # pulse rate cap
