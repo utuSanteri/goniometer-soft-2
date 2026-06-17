@@ -116,19 +116,17 @@ Install with:
 
 
 bash
+```
 pip install PyQt5 numpy matplotlib pyvisa pyserial seabreeze pyyaml
+```
 ___
 
 
 ## Configuration
 All settings live in config.yaml. Example structure:
 
-
-# ─────────────────────────────────────────────
-#  Hardware Configuration
-# ─────────────────────────────────────────────
-
-
+yaml
+```
 motors:
   steps_per_revolution: 200        # native full steps per rev
   microstep_divisor: 1            # match your driver DIP settings (1/16)
@@ -164,18 +162,12 @@ sourcemeter:
   nplc: 1.0                        # integration time in power-line cycles
 
 
-# ─────────────────────────────────────────────
-#  Scan Defaults (overridden by GUI)
-# ─────────────────────────────────────────────
 scan:
   angle_start_deg: -90
   angle_end_deg: 90.0
   angle_step_deg: 5.0
 
 
-# ─────────────────────────────────────────────
-#  Data / Logging
-# ─────────────────────────────────────────────
 data:
   default_filename: "scan_data"
   default_save_dir: "./data"
@@ -183,7 +175,7 @@ data:
   delimiter: ";"
   write_raw_counts: true
   write_dark_corrected: true
-
+```
 
 ___
 
@@ -193,12 +185,14 @@ From the project root directory:
 
 
 bash
+```
 python -m gui
+```
 Or using the convenience launcher:
 
-
+```
 python launcher.py
-
+```
 
 ## Mock / Testing Mode
 For development without physical hardware, the mock backend is selected in
@@ -206,13 +200,14 @@ gui/hw_imports.py:
 
 
 python
-# ── Real hardware ──────────────────────────────────────────────────
-# from hardware import MotorController, Spectrometer, SourceMeter, SourceMeterError
+```
+#── Real hardware ──────────────────────────────────────────────────
+#from hardware import MotorController, Spectrometer, SourceMeter, SourceMeterError
 
 
-# ── Mock hardware for testing ──────────────────────────────────────
+#── Mock hardware for testing ──────────────────────────────────────
 from hardware_mock import MotorController, Spectrometer, SourceMeter, SourceMeterError
-
+```
 
 Swap the commented lines to switch between real and mock instruments. No other
 files need to change.
@@ -223,6 +218,7 @@ to ensure interface compatibility:
 
 
 python
+```
 from hardware._base import BaseMotorController
 
 
@@ -230,7 +226,7 @@ class MotorController(BaseMotorController):
     def connect(self):        ...
     def disconnect(self):     ...
     # ... all abstract methods must be implemented
-
+```
 
 This guarantees that if a new method is added to the base class and not
 implemented in the mock, a TypeError is raised at instantiation rather than
@@ -242,27 +238,28 @@ Hardware Layer (hardware/)
 Each instrument type has:
 
 
-An abstract base class in _base.py defining the public interface
-A concrete implementation in its own module (motor.py, spectrometer.py, sourcemeter.py)
+An abstract base class in _base.py defining the public interface\
+A concrete implementation in its own module (motor.py, spectrometer.py, sourcemeter.py)\
 All existing consumer code imports from the package root:
 
 
 python
+```
 from hardware import MotorController, Spectrometer, SourceMeter, SourceMeterError
-
+```
 
 This import path is preserved by hardware/__init__.py re-exporting everything.
 
 
 ## GUI Layer (gui/)
-Component   Role
-HardwareState   Single mutable container holding connected instrument objects. Passed to every tab — when hardware is connected on the Connect tab, all other tabs see it immediately.
-ScanBridge  Qt signal bridge. The ScanWorker runs in a background thread and calls plain Python callbacks; those callbacks emit Qt signals so the GUI thread can safely update widgets.
-Tabs    Self-contained QWidget subclasses. Each tab owns its own UI and handlers. Cross-tab communication goes through signals or the shared HardwareState.
-PlotPanel   Matplotlib canvas widget. Tabs that need to plot emit a sig_plot signal; MainWindow wires it to PlotPanel.plot_spectrum.
-MainWindow  Coordinator. Owns the tab bar, right panel, progress bar, and scan lifecycle. Does not contain instrument-specific UI code.
-Extending
-Adding a new instrument:
+| Component | Role |
+|-----------|------|
+| HardwareState | Single mutable container holding connected instrument objects. Passed to every tab — when hardware is connected on the Connect tab, all other tabs see it immediately.
+| ScanBridge | Qt signal bridge. The ScanWorker runs in a background thread and calls plain Python callbacks; those callbacks emit Qt signals so the GUI thread can safely update widgets.
+| Tabs | Self-contained QWidget subclasses. Each tab owns its own UI and handlers. Cross-tab communication goes through signals or the shared HardwareState.
+| PlotPanel | Matplotlib canvas widget. Tabs that need to plot emit a sig_plot signal; MainWindow wires it to PlotPanel.plot_spectrum.
+| MainWindow | Coordinator. Owns the tab bar, right panel, progress bar, and scan lifecycle. Does not contain instrument-specific UI code.
+| Extending | Adding a new instrument:
 
 
 Add a new ABC method set to hardware/_base.py (if it's a new category)
