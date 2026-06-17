@@ -1,2 +1,3 @@
 *.py[cod]
 *.$py.class
+scan_data*
