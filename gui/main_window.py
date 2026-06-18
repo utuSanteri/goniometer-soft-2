@@ -9,8 +9,9 @@ import traceback
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QTabWidget,
     QVBoxLayout, QHBoxLayout,
-    QLabel, QProgressBar, QSplitter, QMessageBox,
+    QLabel, QProgressBar, QSplitter, QMessageBox, QStackedWidget,
 )
+
 from PyQt5.QtCore import Qt
 
 from gui.state  import HardwareState
@@ -18,7 +19,7 @@ from gui.bridge import ScanBridge
 from gui.widgets.plot_panel import PlotPanel
 from gui.widgets.log_panel  import QTextEditHandler, create_log_panel
 from gui.tabs   import (
-    ConnectTab, SpectrometerTab, SourceTab, ScanTab, ManualTab,
+    ConnectTab, SpectrometerTab, SourceTab, ScanTab, ManualTab, PlotTab,
 )
 from scan_worker import ScanWorker
 
@@ -66,12 +67,14 @@ class MainWindow(QMainWindow):
             self.hw, self.cfg,
             get_subtract_dark=lambda: self.tab_spec.subtract_dark,
         )
+        self.tab_plot = PlotTab(self)
 
         self.tabs.addTab(self.tab_connect, "Connect")
         self.tabs.addTab(self.tab_spec,    "Spectrometer")
         self.tabs.addTab(self.tab_source,  "Source")
         self.tabs.addTab(self.tab_scan,    "Scan")
         self.tabs.addTab(self.tab_manual,  "Manual")
+        self.tabs.addTab(self.tab_plot,  "Plot")
 
         left_layout.addWidget(self.tabs)
 
@@ -86,17 +89,22 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left)
 
-        # ── Right panel: plot + log ───────────────────────────────────
+        # ── Right panel: stacked plot + log ───────────────────────
         right = QWidget()
         right_layout = QVBoxLayout(right)
 
-        self.plot_panel = PlotPanel()
-        right_layout.addWidget(self.plot_panel, stretch=3)
+        # Stacked widget: index 0 = live plot, index 1 = analysis
+        self.right_stack = QStackedWidget()
+        self.plot_panel = PlotPanel()                        # live
+        self.right_stack.addWidget(self.plot_panel)          # idx 0
+        self.right_stack.addWidget(self.tab_plot.analysis_canvas)  # idx 1
+        right_layout.addWidget(self.right_stack, stretch=3)
 
         self.log_box = create_log_panel()
         right_layout.addWidget(self.log_box, stretch=1)
 
         splitter.addWidget(right)
+
 
         # Logging handler → root logger
         handler = QTextEditHandler(self.log_box)
@@ -122,6 +130,14 @@ class MainWindow(QMainWindow):
         self.bridge.sig_status.connect(self._on_status)
         self.bridge.sig_finished.connect(self._on_finished)
         self.bridge.sig_error.connect(self._on_error)
+        # Right-panel switching
+        self.tab_plot.sig_show_analysis.connect(
+            lambda: self.right_stack.setCurrentIndex(1))
+        self.tab_plot.sig_show_live.connect(
+            lambda: self.right_stack.setCurrentIndex(0))
+
+        # Auto-switch when changing tabs
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
     # ─────────────────────────────────────────────────────────────────
     #  Scan control
@@ -204,6 +220,15 @@ class MainWindow(QMainWindow):
         self.tab_scan.set_running(False)
         QMessageBox.critical(self, "Scan Error", tb)
         log.error("Scan error:\n%s", tb)
+
+    def _on_tab_changed(self, idx):
+        """Show analysis canvas when Plot tab is active,
+        live plot otherwise."""
+        if self.tabs.widget(idx) is self.tab_plot:
+            if self.tab_plot.cmb_files.count() > 0:
+                self.right_stack.setCurrentIndex(1)   # analysis
+        else:
+            self.right_stack.setCurrentIndex(0)       # live
 
     # ─────────────────────────────────────────────────────────────────
     #  Shutdown
