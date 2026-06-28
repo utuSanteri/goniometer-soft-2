@@ -32,6 +32,8 @@ sourcemeter:
   source_mode: "VOLT"              # VOLT or CURR
   settle_time_ms: 200              # wait after output ON before collecting spectrum (milliseconds)
   nplc: 1.0                        # integration time in power-line cycles
+  channel: 1
+
 
 # ─────────────────────────────────────────────
 #  Scan Defaults (overridden by GUI)
