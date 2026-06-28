@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import pyqtSignal
 
-from gui.hw_imports import MotorController, Spectrometer, SourceMeter
+from gui.hw_imports import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class ConnectTab(QWidget):
         lay.addWidget(grp2)
 
         # Source meter
-        grp3 = QGroupBox("Source Meter (Keithley 2461)")
+        grp3 = QGroupBox("Source-Meter Unit")
         g3 = QGridLayout(grp3)
         g3.addWidget(QLabel("VISA Resource:"), 0, 0)
         self.inp_visa = QLineEdit(
@@ -116,25 +116,34 @@ class ConnectTab(QWidget):
             log.error("Spectrometer connect failed: %s", e)
 
     def _connect_source(self):
-        try:
-            k = self.cfg["sourcemeter"]
-            self.hw.source = SourceMeter(
-                resource=self.inp_visa.text(),
-                source_mode=k["source_mode"],
-                voltage=k["default_voltage_v"],
-                current_limit=k["default_current_limit_a"],
-                settle_ms=k["settle_time_ms"],
-                nplc=k["nplc"],
-                current_threshold=k.get("current_threshold_a", 1e-6),
-                voltage_threshold=k.get("voltage_threshold_v", 1e-3),
-                compliance_fraction=k.get("compliance_fraction", 0.95),
-                verify_on_output_on=k.get("verify_on_output_on", True),
-            )
-            self.hw.source.connect()
-            self.lbl_src_status.setText("● Connected")
-            self.lbl_src_status.setStyleSheet("color: green")
-            self.sig_source_connected.emit()
-            log.info("Source meter connected")
-        except Exception as e:
-            QMessageBox.critical(self, "Source Meter Error", str(e))
-            log.error("Source meter connect failed: %s", e)
+        k = self.cfg["sourcemeter"]
+        params = {
+                    "resource": self.inp_visa.text(),
+                    "source_mode": k["source_mode"],
+                    "voltage": k["default_voltage_v"],
+                    "current_limit": k["default_current_limit_a"],
+                    "settle_ms": k["settle_time_ms"],
+                    "nplc": k["nplc"],
+                    "current_threshold": k.get("current_threshold_a", 1e-6),
+                    "voltage_threshold": k.get("voltage_threshold_v", 1e-3),
+                    "compliance_fraction": k.get("compliance_fraction", 0.95),
+                    "verify_on_output_on": k.get("verify_on_output_on", True),
+                }
+        for driver_class in [SourceMeter, KeysightSourceMeter]:
+
+            try:
+                self.hw.source = driver_class(**params)
+                self.hw.source.connect()
+
+                # Success: Update UI and exit
+                self.lbl_src_status.setText(f"● Connected ({driver_class.__name__})")
+                self.lbl_src_status.setStyleSheet("color: green")
+                self.sig_source_connected.emit()
+                log.info(f"{driver_class.__name__} connected successfully.")
+                return  # Exit the function immediately on success
+            except Exception as e:
+                log.warning(f"Attempt with {driver_class.__name__} failed: {e}")
+                # If it fails, the loop continues to the next driver
+
+        QMessageBox.critical(self, "Source Meter Error", "Failed to connect to any available Source Meter driver.")
+        log.error("All source meter connection attempts failed.")
