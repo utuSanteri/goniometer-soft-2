@@ -579,3 +579,271 @@ class SourceMeter:
 
         log.info("[MOCK] Verification passed: signal present, no compliance detected.")
         return result
+    
+
+class KeysightSourceMeter(SourceMeter):
+    """
+    Mock for hardware/keysight_sourcemeter.KeysightSourceMeter.
+
+    Constructor signature and public API match the real Keysight driver
+    exactly so the mock is a true drop-in replacement.
+
+    Simulation engine (synthetic measurements, fault_mode, compliance
+    logic) is inherited unchanged from the mock SourceMeter base class.
+
+    Channel
+    -------
+    self._ch is carried through all log messages so multi-channel
+    scenarios are easy to distinguish in the test output.
+
+    Fault injection
+    ---------------
+    Inherited from SourceMeter — set ``fault_mode`` before output_on():
+        sm.fault_mode = "open"   → signal-too-low path
+        sm.fault_mode = "short"  → compliance-trip path
+        sm.fault_mode = None     → normal operation  (default)
+    """
+
+    def __init__(
+        self,
+        resource_string: str = "MOCK::GPIB0::1::INSTR",
+        channel: int = 1,
+        # ── simulation knobs (not present on the real Keysight driver,
+        #    but useful for controlling mock behaviour) ────────────────
+        source_mode: str = "VOLT",
+        voltage: float = 5.0,
+        current_limit: float = 0.1,
+        settle_ms: float = 200.0,
+        nplc: float = 1.0,
+        current_threshold: float = 1e-6,
+        voltage_threshold: float = 1e-3,
+        compliance_fraction: float = 0.95,
+        verify_on_output_on: bool = True,
+    ) -> None:
+        super().__init__(
+            resource=resource_string,
+            source_mode=source_mode,
+            voltage=voltage,
+            current_limit=current_limit,
+            settle_ms=settle_ms,
+            nplc=nplc,
+            current_threshold=current_threshold,
+            voltage_threshold=voltage_threshold,
+            compliance_fraction=compliance_fraction,
+            verify_on_output_on=verify_on_output_on,
+        )
+        # Store Keysight-specific attributes so callers that inspect them
+        # (e.g. ConnectTab) get the right values.
+        self._resource_string = resource_string
+        self._ch = str(channel)
+
+    # ── Connection ────────────────────────────────────────────────────
+
+    def connect(self) -> None:
+        """
+        Simulate opening a VISA session and verifying a B2900-series IDN.
+        The fake IDN string contains 'B290' so any real-driver checks that
+        look for that substring will pass against this mock too.
+        """
+        time.sleep(0.1)
+        self._connected = True
+        _fake_idn = (
+            "Keysight Technologies,B2902A,MY00000001,3.0.0-2.0"
+        )
+        log.info(
+            "[MOCK] Keysight SMU connected: %s (channel %s)",
+            _fake_idn, self._ch,
+        )
+
+    def disconnect(self) -> None:
+        if self._output_on:
+            self.output_off()
+        self._connected = False
+        log.info("[MOCK] Keysight SMU disconnected (channel %s)", self._ch)
+
+    # ── Settings ──────────────────────────────────────────────────────
+
+    def set_voltage(self, v: float) -> None:
+        """
+        Mirrors the real driver: switches to VOLT source mode *and*
+        sets the output level in one call.
+        """
+        self.source_mode = "VOLT"
+        self.voltage = v
+        log.debug(
+            "[MOCK] Keysight ch%s: VOLT source → %.4f V", self._ch, v
+        )
+
+    def set_current_limit(self, a: float) -> None:
+        """Set the current compliance limit (VOLT source mode)."""
+        self.current_limit = a
+        log.debug(
+            "[MOCK] Keysight ch%s: current compliance → %.6f A", self._ch, a
+        )
+
+    def set_source_mode(self, mode: str) -> None:
+        self.source_mode = mode.upper()
+        log.info(
+            "[MOCK] Keysight ch%s: source mode → %s", self._ch, self.source_mode
+        )
+
+    # ── Output control ────────────────────────────────────────────────
+
+    def output_on(self) -> None:
+        self._require_connected()
+        self._output_on = True
+        time.sleep(self.settle_ms / 1000.0)
+        log.info("[MOCK] Keysight ch%s: output ON", self._ch)
+        if self.verify_on_output_on:
+            self.verify_operation()
+
+    def output_off(self) -> None:
+        if self._connected:
+            self._output_on = False
+            log.info("[MOCK] Keysight ch%s: output OFF", self._ch)
+
+    def get_output_state(self) -> bool:
+        return self._output_on
+
+    # ── Measurement ───────────────────────────────────────────────────
+
+    def measure(self) -> float:
+        """
+        Complementary quantity to the active source mode:
+          VOLT source → returns current (A)
+          CURR source → returns voltage (V)
+        """
+        self._require_connected()
+        val = (
+            self._simulated_current()
+            if self.source_mode == "VOLT"
+            else self._simulated_voltage()
+        )
+        log.debug(
+            "[MOCK] Keysight ch%s measured %.6g %s",
+            self._ch, val,
+            "A" if self.source_mode == "VOLT" else "V",
+        )
+        return val
+
+    # ── Verification ──────────────────────────────────────────────────
+
+    def verify_operation(self) -> dict:
+        """
+        Returns the same standardised dict as the mock SourceMeter so
+        ScanWorker can use either instrument class interchangeably:
+
+            mode, measured, limit, compliance_hw,
+            signal_ok, compliance_ok, ok
+
+        Raises SourceMeterError on open-circuit or compliance conditions,
+        matching both the real Keysight driver (post bug-fix) and the
+        mock SourceMeter base class.
+        """
+        measured      = self.measure()
+        hw_compliance = self._is_in_compliance_hw()
+
+        if self.source_mode == "VOLT":
+            limit, threshold, quantity, unit = (
+                self.current_limit, self.current_threshold, "current", "A"
+            )
+        else:
+            limit, threshold, quantity, unit = (
+                self.voltage, self.voltage_threshold, "voltage", "V"
+            )
+
+        soft_limit    = self.compliance_fraction * limit
+        signal_ok     = abs(measured) >= threshold
+        sw_comp_ok    = abs(measured) <  soft_limit
+        compliance_ok = sw_comp_ok and not hw_compliance
+
+        result = {
+            "mode":          self.source_mode,
+            "measured":      measured,
+            "limit":         limit,
+            "compliance_hw": hw_compliance,
+            "signal_ok":     signal_ok,
+            "compliance_ok": compliance_ok,
+            "ok":            signal_ok and compliance_ok,
+        }
+
+        log.info(
+            "[MOCK] Keysight ch%s [%s mode]: measured %s = %.6g %s  "
+            "(threshold=%.3g, soft_limit=%.3g, hw_compliance=%s)",
+            self._ch, self.source_mode,
+            quantity, measured, unit,
+            threshold, soft_limit, hw_compliance,
+        )
+
+        if not signal_ok:
+            msg = (
+                f"[Keysight ch{self._ch} {self.source_mode} mode] "
+                f"Measured {quantity} ({measured:.6g} {unit}) is below "
+                f"the minimum expected threshold ({threshold:.3g} {unit}). "
+                f"Possible open circuit or disconnected load."
+            )
+            log.error("[MOCK] %s", msg)
+            raise SourceMeterError(msg)
+
+        if not compliance_ok:
+            reason = (
+                "hardware compliance bit is set"
+                if hw_compliance
+                else (
+                    f"measured {quantity} ({measured:.6g} {unit}) "
+                    f">= {self.compliance_fraction*100:.0f}% of limit "
+                    f"({soft_limit:.6g} {unit})"
+                )
+            )
+            msg = (
+                f"[Keysight ch{self._ch} {self.source_mode} mode] "
+                f"Source is saturating / in compliance: {reason}. "
+                f"Possible short circuit or incorrect limit setting."
+            )
+            log.error("[MOCK] %s", msg)
+            raise SourceMeterError(msg)
+
+        log.info(
+            "[MOCK] Keysight ch%s: verification passed — "
+            "signal present, no compliance detected.", self._ch
+        )
+        return result
+
+    # ── Keysight-style SCPI simulation (for unit tests) ───────────────
+
+    def _query(self, cmd: str) -> str:
+        """
+        Return Keysight-style SCPI responses.
+
+        The channel number is stripped before matching so the same
+        logic covers both single- and dual-channel instruments.
+        """
+        # Normalise: remove channel digit so ":MEAS:CURR? (@1)" →
+        # ":MEAS:CURR? (@)"
+        cmd_norm = cmd.strip().upper()
+
+        if "MEAS:CURR" in cmd_norm:
+            i = self._simulated_current()
+            return f"{i:.6E}"
+
+        if "MEAS:VOLT" in cmd_norm:
+            v = self._simulated_voltage()
+            return f"{v:.6E}"
+
+        if "CURR:PROT:TRIP" in cmd_norm:
+            # 1 = compliance tripped, 0 = OK  (Keysight syntax)
+            return "1" if self._is_in_compliance_hw() else "0"
+
+        if "*IDN?" in cmd_norm:
+            return (
+                f"Keysight Technologies,B2902A,"
+                f"MY0000000{self._ch},3.0.0-2.0"
+            )
+
+        if "OUTP" in cmd_norm and "?" in cmd_norm:
+            return "1" if self._output_on else "0"
+
+        if "SYST:ERR" in cmd_norm:
+            return '+0,"No error"'
+
+        return "0"
