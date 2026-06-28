@@ -11,9 +11,7 @@ from hardware._visa import get_resource_manager
 log = logging.getLogger(__name__)
 
 
-class SourceMeterError(Exception):
-    """Raised when the SourceMeter detects an unsafe or unexpected
-    operating condition."""
+from hardware.exceptions import HardwareDisconnectedError, SourceMeterError
 
 
 class SourceMeter(BaseSourceMeter):
@@ -57,7 +55,7 @@ class SourceMeter(BaseSourceMeter):
                  compliance_fraction: float = 0.95,
                  verify_on_output_on: bool = True):
         self._rm   = None
-        self._inst = None
+        self._dev = None
         self.resource      = resource
         self.source_mode   = source_mode.upper()
         self.voltage       = voltage
@@ -74,11 +72,11 @@ class SourceMeter(BaseSourceMeter):
     def connect(self):
         self._rm = get_resource_manager()
         resolved = self._resolve_resource(self.resource)
-        self._inst = self._rm.open_resource(resolved)
-        self._inst.timeout = 10_000
+        self._dev = self._rm.open_resource(resolved)
+        self._dev.timeout = 10_000
 
-        self._inst.write_termination = "\n"
-        self._inst.read_termination  = "\n"
+        self._dev.write_termination = "\n"
+        self._dev.read_termination  = "\n"
 
         self._write("*RST")
         self._write("*CLS")
@@ -88,21 +86,21 @@ class SourceMeter(BaseSourceMeter):
         log.info("SourceMeter connected: %s", resolved)
 
     def disconnect(self):
-        if self._inst:
+        if self._dev:
             self.output_off()
-            self._inst.close()
-            self._inst = None
+            self._dev.close()
+            self._dev = None
             log.info("SourceMeter disconnected")
 
     def is_connected(self) -> bool:
-        return self._inst is not None
+        return self._dev is not None
 
     # ── Low-level helpers ─────────────────────────────────────────────
     def _write(self, cmd: str):
-        self._inst.write(cmd)
+        self._dev.write(cmd)
 
     def _query(self, cmd: str) -> str:
-        return self._inst.query(cmd).strip()
+        return self._dev.query(cmd).strip()
 
     def _check_errors(self) -> bool:
         errors = []
@@ -145,7 +143,7 @@ class SourceMeter(BaseSourceMeter):
     # ── Settings ──────────────────────────────────────────────────────
     def set_voltage(self, v: float):
         self.voltage = v
-        if self._inst:
+        if self._dev:
             cmd = (":SOUR:VOLT:LEV:IMM" if self.source_mode == "VOLT"
                    else ":SOUR:CURR:VLIM")
             self._write(f"{cmd} {v:.4f}")
@@ -153,7 +151,7 @@ class SourceMeter(BaseSourceMeter):
 
     def set_current_limit(self, a: float):
         self.current_limit = a
-        if self._inst:
+        if self._dev:
             cmd = (":SOUR:VOLT:ILIM" if self.source_mode == "VOLT"
                    else ":SOUR:CURR:LEV:IMM")
             self._write(f"{cmd} {a:.6f}")
@@ -161,12 +159,12 @@ class SourceMeter(BaseSourceMeter):
 
     def set_source_mode(self, mode: str):
         self.source_mode = mode.upper()
-        if self._inst:
+        if self._dev:
             self._configure()
 
     # ── Output control ────────────────────────────────────────────────
     def output_on(self):
-        if not self._inst:
+        if not self._dev:
             raise RuntimeError("SourceMeter not connected")
         self._write(":OUTP ON")
         time.sleep(self.settle_ms / 1000.0)
@@ -175,7 +173,7 @@ class SourceMeter(BaseSourceMeter):
             self.verify_operation()
 
     def output_off(self):
-        if self._inst:
+        if self._dev:
             self._write(":OUTP OFF")
 
     # ── Verification ──────────────────────────────────────────────────
