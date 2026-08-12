@@ -47,7 +47,7 @@ class SourceTab(QWidget):
         g.addWidget(QLabel("Current limit (A):"), 2, 0)
         self.spn_current = QDoubleSpinBox()
         self.spn_current.setRange(0, 1.05)
-        self.spn_current.setDecimals(4)
+        self.spn_current.setDecimals(8)
         self.spn_current.setValue(
             self.cfg["sourcemeter"]["default_current_limit_a"])
         g.addWidget(self.spn_current, 2, 1)
