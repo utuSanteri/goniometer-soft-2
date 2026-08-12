@@ -21,10 +21,10 @@ Components exported:
 """
 
 # ── Real hardware ──────────────────────────────────────────────────
-#from hardware import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter
+from hardware import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter
 from hardware.exceptions import HardwareError, HardwareDisconnectedError, SourceMeterError
 
 # ── Mock hardware for testing ──────────────────────────────────────
-from hardware_mock import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter, SourceMeterError
+#from hardware_mock import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter, SourceMeterError
 
 __all__ = ["MotorController", "Spectrometer", "SourceMeter", "KeysightSourceMeter", "HardwareError", "HardwareDisconnectedError", "SourceMeterError"]
