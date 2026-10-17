@@ -610,6 +610,19 @@ class SourceMeter:
         return result
     
 
+def find_source_meter(resource: str = "auto", driver: str = "auto"):
+    """Mock of hardware.sourcemeter_registry.find_source_meter."""
+    cls = KeysightSourceMeter if driver == "KeysightSourceMeter" else SourceMeter
+    addr = "MOCK::INSTR" if resource == "auto" else resource
+    return cls, addr, "MOCK,2461,0,1.0"
+
+
+def make_source_meter(cls, **options):
+    import inspect
+    accepted = inspect.signature(cls).parameters
+    return cls(**{k: v for k, v in options.items() if k in accepted})
+
+
 class KeysightSourceMeter(SourceMeter):
     """
     Mock for hardware/keysight_sourcemeter.KeysightSourceMeter.

@@ -6,7 +6,9 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import pyqtSignal
 
-from gui.hw_imports import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter
+from gui.hw_imports import (
+    MotorController, Spectrometer, find_source_meter, make_source_meter,
+)
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +63,9 @@ class ConnectTab(QWidget):
         g3 = QGridLayout(grp3)
         g3.addWidget(QLabel("VISA Resource:"), 0, 0)
         self.inp_visa = QLineEdit(
-            self.cfg["sourcemeter"]["visa_resource"])
+            self.cfg["sourcemeter"].get("resource", "auto"))
+        self.inp_visa.setToolTip(
+            '"auto" finds the instrument. Or enter a VISA address.')
         g3.addWidget(self.inp_visa, 0, 1)
         self.btn_src_connect = QPushButton("Connect Source Meter")
         self.btn_src_connect.clicked.connect(self._connect_source)
@@ -118,33 +122,48 @@ class ConnectTab(QWidget):
 
     def _connect_source(self):
         k = self.cfg["sourcemeter"]
-        params = {
-                    "resource": self.inp_visa.text(),
-                    "source_mode": k["source_mode"],
-                    "voltage": k["default_voltage_v"],
-                    "current_limit": k["default_current_limit_a"],
-                    "settle_ms": k["settle_time_ms"],
-                    "nplc": k["nplc"],
-                    "current_threshold": k.get("current_threshold_a", 1e-6),
-                    "voltage_threshold": k.get("voltage_threshold_v", 1e-3),
-                    "compliance_fraction": k.get("compliance_fraction", 0.95),
-                    "verify_on_output_on": k.get("verify_on_output_on", True),
-                }
-        for driver_class in [SourceMeter, KeysightSourceMeter]:
-
+        options = {
+            "source_mode": k["source_mode"],
+            "voltage": k["default_voltage_v"],
+            "current_limit": k["default_current_limit_a"],
+            "settle_ms": k["settle_time_ms"],
+            "nplc": k["nplc"],
+            "channel": k.get("channel", 1),
+            "current_threshold": k.get("current_threshold_a", 1e-6),
+            "voltage_threshold": k.get("voltage_threshold_v", 1e-3),
+            "compliance_fraction": k.get("compliance_fraction", 0.95),
+            "verify_on_output_on": k.get("verify_on_output_on", True),
+        }
+        if self.hw.source:
             try:
-                self.hw.source = driver_class(**params)
-                self.hw.source.connect()
-
-                # Success: Update UI and exit
-                self.lbl_src_status.setText(f"● Connected ({driver_class.__name__})")
-                self.lbl_src_status.setStyleSheet("color: green")
-                self.sig_source_connected.emit()
-                log.info(f"{driver_class.__name__} connected successfully.")
-                return  # Exit the function immediately on success
+                self.hw.source.disconnect()
             except Exception as e:
-                log.warning(f"Attempt with {driver_class.__name__} failed: {e}")
-                # If it fails, the loop continues to the next driver
+                log.warning("Disconnecting previous source meter: %s", e)
+        self.hw.source = None
+        self.lbl_src_status.setText("● Disconnected")
+        self.lbl_src_status.setStyleSheet("color: red")
 
-        QMessageBox.critical(self, "Source Meter Error", "Failed to connect to any available Source Meter driver.")
-        log.error("All source meter connection attempts failed.")
+        source = None
+        try:
+            cls, resource, idn = find_source_meter(
+                self.inp_visa.text().strip() or "auto",
+                k.get("driver", "auto"))
+            source = make_source_meter(cls, resource=resource, **options)
+            source.connect()
+        except Exception as e:
+            if source is not None:
+                try:
+                    source.disconnect()
+                except Exception:
+                    pass
+            QMessageBox.critical(self, "Source Meter Error", str(e))
+            log.error("Source meter connect failed: %s", e)
+            return
+
+        self.hw.source = source
+        model = " ".join(idn.split(",")[:2]) if idn else resource
+        self.lbl_src_status.setText(f"● Connected: {model} ({cls.__name__})")
+        self.lbl_src_status.setStyleSheet("color: green")
+        self.sig_source_connected.emit()
+        log.info("Source meter connected: %s via %s at %s",
+                 model, cls.__name__, resource)

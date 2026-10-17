@@ -27,13 +27,18 @@ spectrometer:
   wavelength_max_nm: 1100
 
 sourcemeter:
-  visa_resource: "USB0::0x05E6::0x2461::04491463::0::INSTR"  # replace serial // this is legacy since NI-VISA handles the connection automatically
+  # "auto" finds the instrument by asking each VISA resource *IDN?
+  # (serial ports are skipped). Set a VISA address to try only that one.
+  resource: "auto"
+  # "auto" picks the driver from the *IDN? reply. Or name one:
+  # SourceMeter (Keithley 2461) | KeysightSourceMeter (B2900)
+  driver: "auto"
   default_voltage_v: 5.0
   default_current_limit_a: 0.1
   source_mode: "VOLT"              # VOLT or CURR
   settle_time_ms: 200              # wait after output ON before collecting spectrum (milliseconds)
   nplc: 1.0                        # integration time in power-line cycles
-  channel: 1
+  channel: 1                       # multi-channel instruments only
 
 
 # ─────────────────────────────────────────────

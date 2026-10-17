@@ -225,19 +225,6 @@ class SourceMeter(BaseSourceMeter):
                          resource, addr)
                 return addr
 
-        log.warning("Resource %r not found directly — scanning...", resource)
-        for addr in all_resources:
-            try:
-                inst = self._rm.open_resource(addr)
-                inst.timeout = 2000
-                idn = inst.query("*IDN?").strip()
-                inst.close()
-                if "2461" in idn:
-                    log.info("Found Keithley 2461 at %r", addr)
-                    return addr
-            except Exception:
-                continue
-
         raise RuntimeError(
             f"Keithley 2461 not found.\n"
             f"Config has  : {resource!r}\n"
