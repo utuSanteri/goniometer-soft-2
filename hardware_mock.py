@@ -5,8 +5,7 @@ Drop-in mock for MotorController, Spectrometer, and SourceMeter.
 Produces synthetic but realistic data so every code-path in gui.py and
 scan_worker.py can be exercised without any physical hardware.
 
-Swap the import in gui.py:
-    from hardware_mock import MotorController, Spectrometer, SourceMeter, OutputVerificationError
+Selected by starting the app with --mock (see gui/hw_imports.py).
 """
 
 import time
@@ -18,10 +17,19 @@ log = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  Shared exception  (mirrors hardware.py)
+#  Shared exceptions  (mirror hardware/exceptions.py; defined here so the
+#  mock runs without pyvisa / pyserial installed)
 # ══════════════════════════════════════════════════════════════════════
-class SourceMeterError(Exception):
+class HardwareError(Exception):
+    """Base class for all mock hardware errors."""
+
+
+class SourceMeterError(HardwareError):
     """Raised when the mock SourceMeter detects an unsafe condition."""
+
+
+class HardwareDisconnectedError(HardwareError):
+    """Raised when a mock device is not reachable."""
 
 
 # Alias so gui.py's  `from hardware_mock import … OutputVerificationError`

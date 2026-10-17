@@ -1,33 +1,49 @@
 """
 Hardware Abstraction Layer (HAL) Import Module.
 
-This module provides a centralized entry point for all hardware components 
+This module provides a centralized entry point for all hardware components
 and error types used throughout the GUI application.
 
-DESIGN PATTERN:
-To facilitate testing without physical hardware, this module implements a 
-simple toggle between real hardware implementations and mock implementations.
-
 HOW TO SWITCH:
-1. For Real Hardware: 
-   Uncomment the imports from the `hardware` module and 
-   comment out the imports from the `hardware_mock` module.
-2. For Mock/Testing: 
-   Ensure the `hardware_mock` imports are active (default state).
+Real hardware is the default. To run on the mock instruments instead
+(no hardware or drivers needed), start the app with --mock:
+
+    python launcher.py --mock
+    python -m gui --mock
+
+or set the environment variable GONIO_MOCK=1.
 
 Components exported:
     - MotorController, Spectrometer, SourceMeter, KeysightSourceMeter
+    - find_source_meter, make_source_meter
     - HardwareError, HardwareDisconnectedError, SourceMeterError
+    - MOCK (True when the mock instruments are in use)
 """
 
-# ── Real hardware ──────────────────────────────────────────────────
-from hardware import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter
-from hardware import find_source_meter, make_source_meter
-from hardware.exceptions import HardwareError, HardwareDisconnectedError, SourceMeterError
+import os
+import sys
 
-# ── Mock hardware for testing ──────────────────────────────────────
-#from hardware_mock import MotorController, Spectrometer, SourceMeter, KeysightSourceMeter, SourceMeterError
-#from hardware_mock import find_source_meter, make_source_meter
+MOCK = ("--mock" in sys.argv or
+        os.environ.get("GONIO_MOCK", "").strip().lower()
+        in ("1", "true", "yes", "on"))
+
+if MOCK:
+    # ── Mock hardware for testing ──────────────────────────────────
+    from hardware_mock import (
+        MotorController, Spectrometer, SourceMeter, KeysightSourceMeter,
+        find_source_meter, make_source_meter,
+        HardwareError, HardwareDisconnectedError, SourceMeterError,
+    )
+else:
+    # ── Real hardware ──────────────────────────────────────────────
+    from hardware import (
+        MotorController, Spectrometer, SourceMeter, KeysightSourceMeter,
+        find_source_meter, make_source_meter,
+    )
+    from hardware.exceptions import (
+        HardwareError, HardwareDisconnectedError, SourceMeterError,
+    )
 
 __all__ = ["MotorController", "Spectrometer", "SourceMeter", "KeysightSourceMeter",
-           "find_source_meter", "make_source_meter", "HardwareError", "HardwareDisconnectedError", "SourceMeterError"]
+           "find_source_meter", "make_source_meter", "HardwareError",
+           "HardwareDisconnectedError", "SourceMeterError", "MOCK"]

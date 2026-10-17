@@ -77,6 +77,7 @@ class DataWorker:
         header_spectrum = [
             f"# Spectroscopy Scan Data — Spectrometer",
             f"# Format           : {FORMAT_TAG}",
+            f"# Hardware         : {'MOCK (simulated data)' if p.get('mock') else 'real'}",
             f"# Date             : {now}",
             f"# Angles           : {p['angle_start']} to {p['angle_end']} "
             f"step {p['angle_step']} deg",

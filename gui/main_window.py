@@ -22,6 +22,7 @@ from gui.tabs   import (
     ConnectTab, SpectrometerTab, SourceTab, ScanTab, ManualTab, PlotTab,
 )
 from scan_worker import ScanWorker
+from gui.hw_imports import MOCK
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,11 @@ class MainWindow(QMainWindow):
         self.bridge = ScanBridge()
         self.worker = None
 
-        self.setWindowTitle("Spectroscopy Angle Scanner")
+        self.setWindowTitle("Spectroscopy Angle Scanner"
+                            + ("  [MOCK HARDWARE]" if MOCK else ""))
+        if MOCK:
+            log.warning("Running on MOCK hardware: no real instruments "
+                        "are used and all data is simulated.")
         self.resize(1200, 800)
         self._build_ui()
         self._connect_signals()
@@ -180,6 +185,7 @@ class MainWindow(QMainWindow):
 
         params = self.tab_scan.get_params()
         params["subtract_dark"] = self.tab_spec.subtract_dark
+        params["mock"] = MOCK
         if params["subtract_dark"] and not self.hw.spec.has_dark():
             QMessageBox.critical(
                 self, "Error",

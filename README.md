@@ -195,22 +195,19 @@ python launcher.py
 ```
 
 ## Mock / Testing Mode
-For development without physical hardware, the mock backend is selected in
-gui/hw_imports.py:
+Real hardware is the default. For development without physical hardware,
+start the app with `--mock`:
 
-
-python
 ```
-#── Real hardware ──────────────────────────────────────────────────
-#from hardware import MotorController, Spectrometer, SourceMeter, SourceMeterError
-
-
-#── Mock hardware for testing ──────────────────────────────────────
-from hardware_mock import MotorController, Spectrometer, SourceMeter, SourceMeterError
+python launcher.py --mock
+python -m gui --mock
 ```
 
-Swap the commented lines to switch between real and mock instruments. No other
-files need to change.
+or set the environment variable `GONIO_MOCK=1`. The window title then shows
+`[MOCK HARDWARE]` and saved spectrum files are marked
+`# Hardware : MOCK (simulated data)`. The mock needs no instrument drivers
+(pyvisa, pyserial, seabreeze). The switch lives in `gui/hw_imports.py`; no
+other files need to change.
 
 
 Mock classes should subclass the abstract base classes in hardware/_base.py
