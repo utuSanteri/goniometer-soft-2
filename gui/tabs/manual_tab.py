@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
@@ -20,6 +21,7 @@ class ManualTab(QWidget):
 
     sig_plot     = pyqtSignal(object, object, object)   # angle, wl, counts
     sig_zero_set = pyqtSignal()
+    sig_move_done = pyqtSignal(object)   # None, or the exception raised
 
     def __init__(self, hw, cfg, get_subtract_dark, parent=None):
         """
@@ -34,7 +36,9 @@ class ManualTab(QWidget):
         self.cfg = cfg
         self._get_subtract_dark = get_subtract_dark
         self._last_spectrum = None
+        self._moving = False
         self._build_ui()
+        self.sig_move_done.connect(self._on_move_done)
 
     # ── UI ────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -93,6 +97,12 @@ class ManualTab(QWidget):
         g.addWidget(btn_update_pos, 9, 0, 1, 2)
         lay.addWidget(grp)
 
+        # Disabled while a move runs. These all talk to the Arduino and
+        # would wait for the move to finish, freezing the window. STOP
+        # stays usable.
+        self._move_lock_buttons = [btn_fwd, btn_rev, btn_zero, btn_home,
+                                   btn_speed, btn_update_pos]
+
         grp2 = QGroupBox("Manual Spectrometer and Source Output Control")
         g2 = QVBoxLayout(grp2)
         btn_single = QPushButton("Acquire Single Spectrum")
@@ -123,13 +133,36 @@ class ManualTab(QWidget):
         if not self.hw.motor:
             QMessageBox.warning(self, "Warning", "Motor not connected")
             return
-        try:
-            motor_id = int(self.cmb_man_motor.currentText())
-            deg = sign * self.spn_man_deg.value()
-            self.hw.motor.move_degrees(motor_id, deg)
-            self._refresh_position()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+        motor_id = int(self.cmb_man_motor.currentText())
+        deg = sign * self.spn_man_deg.value()
+        self._start_move(lambda: self.hw.motor.move_degrees(motor_id, deg))
+
+    def _start_move(self, fn):
+        """Runs a blocking motor move in a background thread so the
+        window (and the STOP button) stays responsive."""
+        if self._moving:
+            return
+        self._set_moving(True)
+
+        def work():
+            try:
+                fn()
+                self.sig_move_done.emit(None)
+            except Exception as e:
+                self.sig_move_done.emit(e)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_move_done(self, err):
+        self._set_moving(False)
+        self._refresh_position()
+        if err is not None:
+            QMessageBox.critical(self, "Error", str(err))
+
+    def _set_moving(self, moving: bool):
+        self._moving = moving
+        for b in self._move_lock_buttons:
+            b.setEnabled(not moving)
 
     def _stop_motors(self):
         if self.hw.motor:
@@ -147,11 +180,7 @@ class ManualTab(QWidget):
 
     def _home_motors(self):
         if self.hw.motor:
-            try:
-                self.hw.motor.home()
-                self._refresh_position()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", str(e))
+            self._start_move(self.hw.motor.home)
 
     def _set_speed(self):
         if self.hw.motor:
