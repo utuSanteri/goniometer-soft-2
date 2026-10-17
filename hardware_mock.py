@@ -366,8 +366,13 @@ class SourceMeter:
         source.fault_mode = None          → normal operation  (default)
     """
 
-    # Simulated load resistance (Ω)
-    _LOAD_OHMS = 50.0
+    # Simulated load resistance (Ω). With the config defaults (VOLT mode,
+    # 5 V, 0.1 A limit) this draws 50 mA, half the limit, so a default
+    # mock run passes verification. 50 Ω drew exactly the limit and always
+    # reported compliance. In CURR mode the same defaults (0.1 A into
+    # 100 Ω = 10 V against a 5 V compliance) do hit compliance, as a real
+    # instrument would; source less current to test CURR mode.
+    _LOAD_OHMS = 100.0
 
     def __init__(self,
                  resource: str = "MOCK::INSTR",

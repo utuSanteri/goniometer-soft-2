@@ -140,9 +140,8 @@ Decisions:
 
 ## Out of scope for now
 
-- Showstopper 5 (mock default): `home-branch` now imports real hardware, but
-  switching to the mock is still done by editing `gui/hw_imports.py`, and the
-  mock import line lacks `HardwareError` / `HardwareDisconnectedError`.
+- Showstopper 5 (mock default): done (7ec7a94). `--mock` or `GONIO_MOCK=1`
+  selects the mock.
 
 ## Needs checking on hardware
 
