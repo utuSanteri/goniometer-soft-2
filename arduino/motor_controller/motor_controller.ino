@@ -90,7 +90,25 @@ void checkMotionCompletion() {
 
 // ─────────────────────────────────────────────────────────────────────
 void handleCommand(String cmd) {
-  if (cmd.startsWith("MOVE")) {
+  // MOVETO must be checked before MOVE, since "MOVETO" also starts with "MOVE"
+  if (cmd.startsWith("MOVETO")) {
+    int m;
+    long target;
+    if (sscanf(cmd.c_str(), "MOVETO %d %ld", &m, &target) == 2) {
+      if (m == 1) {
+        stepper1.moveTo(target);
+        currentMotion = WAIT_M1;
+      } else if (m == 2) {
+        stepper2.moveTo(target);
+        currentMotion = WAIT_M2;
+      } else {
+        Serial.println("ERR invalid motor");
+      }
+    } else {
+      Serial.println("ERR invalid MOVETO syntax");
+    }
+
+  } else if (cmd.startsWith("MOVE")) {
     int m, steps, dir;
     if (sscanf(cmd.c_str(), "MOVE %d %d %d", &m, &steps, &dir) == 3) {
       long targetSteps = (dir == 1) ? steps : -steps;

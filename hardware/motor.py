@@ -75,6 +75,21 @@ class MotorController(BaseMotorController):
         direction = 1 if degrees >= 0 else 0
         self.move_steps(motor, steps, direction)
 
+    def move_to_steps(self, motor: int, target: int):
+        """Move to an absolute step position, relative to the last ZERO."""
+        if not self.is_connected():
+            raise RuntimeError("Motor controller not connected")
+        if (motor == 1 and self.m1_invert) or (motor == 2 and self.m2_invert):
+            target = -target
+        r = self._cmd(f"MOVETO {motor} {target}")
+        if r != "OK":
+            raise RuntimeError(f"MOVETO failed: {r}")
+
+    def move_to_degrees(self, motor: int, degrees: float):
+        """Move to an absolute angle. Rounded to whole steps once, so
+        repeated moves never accumulate rounding error."""
+        self.move_to_steps(motor, int(round(degrees * self.steps_per_degree)))
+
     def stop(self):
         self._cmd("STOP")
 

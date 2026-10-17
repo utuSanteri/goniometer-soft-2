@@ -27,6 +27,9 @@ class BaseMotorController(ABC):
     def move_degrees(self, motor: int, degrees: float): ...
 
     @abstractmethod
+    def move_to_degrees(self, motor: int, degrees: float): ...
+
+    @abstractmethod
     def stop(self): ...
 
     @abstractmethod

@@ -108,6 +108,19 @@ class MotorController:
         direction = 1 if degrees >= 0 else 0
         self.move_steps(motor, steps, direction)
 
+    def move_to_degrees(self, motor: int, degrees: float):
+        """Move motor to an absolute angle, relative to the last zero."""
+        self._require_connected()
+        if motor not in (1, 2):
+            raise ValueError(f"Invalid motor id: {motor}")
+        target = int(round(degrees * self.steps_per_degree))
+        if (motor == 1 and self.m1_invert) or (motor == 2 and self.m2_invert):
+            target = -target
+        with self._lock:
+            self._pos[motor - 1] = target
+        time.sleep(self.move_delay_s)
+        log.debug("[MOCK] Motor %d moved to %d steps", motor, target)
+
     def stop(self):
         self._require_connected()
         log.info("[MOCK] Motors stopped")
