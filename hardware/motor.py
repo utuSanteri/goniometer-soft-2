@@ -4,6 +4,7 @@ Arduino-based motor controller.
 
 import time
 import logging
+import threading
 import serial
 
 from hardware._base import BaseMotorController
@@ -27,6 +28,10 @@ class MotorController(BaseMotorController):
         self._port = port
         self._baud = baud
         self._timeout = timeout
+        # One command/reply pair at a time. STOP only takes the write lock,
+        # so it gets through while a move is waiting for its reply.
+        self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
 
     # ── Connection ────────────────────────────────────────────────────
     def connect(self):
@@ -51,8 +56,15 @@ class MotorController(BaseMotorController):
 
     # ── Low-level ─────────────────────────────────────────────────────
     def _cmd(self, msg: str) -> str:
-        self._ser.write((msg + "\n").encode())
-        resp = self._ser.readline().decode().strip()
+        with self._lock:
+            # Drop any late reply from an earlier command that timed out
+            self._ser.reset_input_buffer()
+            with self._write_lock:
+                self._ser.write((msg + "\n").encode())
+            resp = self._ser.readline().decode().strip()
+        if not resp:
+            raise TimeoutError(
+                f"No reply from Arduino to {msg!r} within {self._timeout} s")
         return resp
 
     def _send_speed(self, steps_per_sec: int):
@@ -91,7 +103,12 @@ class MotorController(BaseMotorController):
         self.move_to_steps(motor, int(round(degrees * self.steps_per_degree)))
 
     def stop(self):
-        self._cmd("STOP")
+        """Decelerate both motors to rest. Returns at once; a move in
+        progress returns when the motor has stopped."""
+        if not self.is_connected():
+            return
+        with self._write_lock:
+            self._ser.write(b"STOP\n")
 
     def zero(self):
         r = self._cmd("ZERO")

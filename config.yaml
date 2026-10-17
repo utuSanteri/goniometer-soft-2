@@ -15,7 +15,7 @@ motors:
   # Arduino serial port
   port: "COM7"                     # Windows: COMx  |  Linux: /dev/ttyUSBx
   baud: 115200
-  timeout_s: 10
+  timeout_s: 60                    # longest wait for a move to finish
 
 spectrometer:
   model_hint: "USB2000+"           # informational only; seabreeze auto-detects

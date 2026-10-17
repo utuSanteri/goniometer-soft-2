@@ -89,6 +89,17 @@ void checkMotionCompletion() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+void stopMotor(AccelStepper &s) {
+  // stop() does nothing at zero speed, so a move that has not taken its
+  // first step yet is cancelled directly.
+  if (s.speed() == 0) {
+    s.moveTo(s.currentPosition());
+  } else {
+    s.stop();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 void handleCommand(String cmd) {
   // MOVETO must be checked before MOVE, since "MOVETO" also starts with "MOVE"
   if (cmd.startsWith("MOVETO")) {
@@ -135,11 +146,11 @@ void handleCommand(String cmd) {
       }
 
   } else if (cmd == "STOP") {
-    // Calculates a new target position that stops the motor as quickly as possible
-    stepper1.stop();
-    stepper2.stop();
-    Serial.println("OK");
-    currentMotion = IDLE;
+    // Decelerate along the acceleration profile so no steps are lost and
+    // the zero stays valid. No reply of its own: the move in progress
+    // (if any) answers OK once the motor has come to rest.
+    stopMotor(stepper1);
+    stopMotor(stepper2);
 
   } else if (cmd == "HOME") {
     stepper1.moveTo(0);
