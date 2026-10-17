@@ -42,6 +42,9 @@ class SourceMeter(BaseSourceMeter):
     has not quite reached the software limit yet.
     """
 
+    # Substring of the *IDN? reply this driver accepts
+    IDN_MATCH = "2461"
+
     # ── Construction ──────────────────────────────────────────────────
     def __init__(self,
                  resource: str,
@@ -77,6 +80,14 @@ class SourceMeter(BaseSourceMeter):
 
         self._dev.write_termination = "\n"
         self._dev.read_termination  = "\n"
+
+        idn = self._query("*IDN?")
+        if self.IDN_MATCH not in idn:
+            self._dev.close()
+            self._dev = None
+            raise HardwareDisconnectedError(
+                f"Unexpected instrument at {resolved}: {idn!r}. "
+                f"Expected a Keithley {self.IDN_MATCH}.")
 
         self._write("*RST")
         self._write("*CLS")

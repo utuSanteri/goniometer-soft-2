@@ -41,7 +41,14 @@ class KeysightSourceMeter(BaseSourceMeter):
     """
     Controls a Keysight B2900-series SMU via pyvisa SCPI commands.
     Drop-in replacement for hardware/sourcemeter.py.
-        """
+
+    Same meaning of the settings as the Keithley driver:
+      VOLT mode: voltage = source level, current_limit = compliance
+      CURR mode: current_limit = source level, voltage = compliance
+    """
+
+    # Substring of the *IDN? reply this driver accepts (B2901A, B2912A, …)
+    IDN_MATCH = "B29"
 
     def __init__(
         self,
@@ -99,8 +106,7 @@ class KeysightSourceMeter(BaseSourceMeter):
                 f"Cannot open VISA resource '{self._resource}': {exc}"
             ) from exc
 
-        # Accept any B2900-series variant (B2901A, B2902A, B2912A, …)
-        if "B290" not in dev_id:
+        if self.IDN_MATCH not in dev_id:
             self.disconnect()
             raise HardwareDisconnectedError(
                 f"Unexpected instrument found: '{dev_id}'. "
@@ -108,12 +114,33 @@ class KeysightSourceMeter(BaseSourceMeter):
             )
 
         self._connected = True
+        self._write("*CLS")
+        self._configure()
         logger.info("Keysight SMU connected: %s (channel %s)", dev_id, self._ch)
 
+    def _configure(self) -> None:
+        """Push mode, level, compliance and NPLC to the instrument."""
+        ch = self._ch
+        if self.source_mode == _VOLTAGE_MODE:
+            self._write(f":SOUR{ch}:FUNC:MODE VOLT")
+            self._write(f":SOUR{ch}:VOLT {self.voltage:g}")
+            self._write(f":SENS{ch}:CURR:PROT {self.current_limit:g}")
+        else:
+            self._write(f":SOUR{ch}:FUNC:MODE CURR")
+            self._write(f":SOUR{ch}:CURR {self.current_limit:g}")
+            self._write(f":SENS{ch}:VOLT:PROT {self.voltage:g}")
+        self._write(f":SENS{ch}:CURR:NPLC {self.nplc:g}")
+        self._write(f":SENS{ch}:VOLT:NPLC {self.nplc:g}")
+        logger.info("Keysight configured: mode=%s  V=%g  I=%g  NPLC=%g",
+                    self.source_mode, self.voltage, self.current_limit,
+                    self.nplc)
+
     def disconnect(self) -> None:
-        """Close the VISA session cleanly."""
+        """Turn the output off and close the VISA session."""
         try:
             if self._dev is not None:
+                if self._connected:
+                    self.output_off()
                 self._dev.close()
         except Exception as exc:
             logger.warning("Error closing VISA session: %s", exc)
@@ -127,8 +154,8 @@ class KeysightSourceMeter(BaseSourceMeter):
     
     def set_source_mode(self, mode: str) -> None:
         self.source_mode = mode.upper()
-        func = "VOLT" if self.source_mode == "VOLT" else "CURR"
-        self._write(f":SOUR{self._ch}:FUNC:MODE {func}")
+        if self._connected:
+            self._configure()
 
     def get_output_state(self) -> bool:
         return bool(int(self._query(f":OUTP{self._ch}?").strip()))
@@ -172,20 +199,21 @@ class KeysightSourceMeter(BaseSourceMeter):
     # ------------------------------------------------------------------
 
     def set_voltage(self, v: float) -> None:
-        """Enter voltage-source mode and set the output level."""
-        self.source_mode = _VOLTAGE_MODE
-        self._write(f":SOUR{self._ch}:FUNC:MODE VOLT")
-        self._write(f":SOUR{self._ch}:VOLT {v:g}")
+        """Source level in VOLT mode, compliance in CURR mode. Range
+        checks are left to the instrument."""
+        self.voltage = v
+        if self.source_mode == _VOLTAGE_MODE:
+            self._write(f":SOUR{self._ch}:VOLT {v:g}")
+        else:
+            self._write(f":SENS{self._ch}:VOLT:PROT {v:g}")
 
     def set_current_limit(self, a: float) -> None:
-        """
-        Set the current compliance limit for voltage-source mode.
-
-        Delegates range validation to the instrument — it will return a
-        VISA error if the value exceeds the hardware range, which is more
-        reliable than a software-side guess.
-        """
-        self._write(f":SENS{self._ch}:CURR:PROT {a:g}")
+        """Compliance in VOLT mode, source level in CURR mode."""
+        self.current_limit = a
+        if self.source_mode == _VOLTAGE_MODE:
+            self._write(f":SENS{self._ch}:CURR:PROT {a:g}")
+        else:
+            self._write(f":SOUR{self._ch}:CURR {a:g}")
 
     def _enable_output(self) -> None:
         self._write(f":OUTP{self._ch} ON")
