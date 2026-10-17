@@ -149,6 +149,12 @@ class MainWindow(QMainWindow):
     #  Scan control
     # ─────────────────────────────────────────────────────────────────
     def _start_scan(self):
+        if self.worker and self.worker.is_running():
+            QMessageBox.warning(
+                self, "Scan running",
+                "The previous scan is still finishing. Try again in a "
+                "moment.")
+            return
         if not self.hw.motor:
             QMessageBox.critical(self, "Error", "Motor not connected")
             return
@@ -204,9 +210,12 @@ class MainWindow(QMainWindow):
                         "scanning (Manual tab)")
 
     def _stop_scan(self):
+        # Start stays disabled until the worker reports back through
+        # _on_finished / _on_error, i.e. once it has really stopped.
         if self.worker:
             self.worker.stop()
-        self.tab_scan.set_running(False)
+        self.tab_scan.btn_stop.setEnabled(False)
+        self.lbl_status.setText("Stopping…")
 
     # ─────────────────────────────────────────────────────────────────
     #  Bridge slots
@@ -255,6 +264,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.worker and self.worker.is_running():
             self.worker.stop()
+            # Let the call in flight return before closing the ports
+            self.worker.join(timeout=10)
         if self.hw.motor:
             self.hw.motor.disconnect()
         if self.hw.spec:

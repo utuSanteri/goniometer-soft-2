@@ -50,11 +50,25 @@ class ScanWorker:
         self._thread.start()
 
     def stop(self):
+        """Asks the scan to stop. Returns at once; the scan thread winds
+        down when the call it is in returns (see join())."""
         self._stop_event.set()
-        self.sourcemeter.output_off()   # safety: turn off immediately
+        # Decelerate the motor; a move in progress returns once at rest
+        try:
+            self.motor.stop()
+        except Exception:
+            log.exception("Motor stop failed")
+        try:
+            self.sourcemeter.output_off()   # safety: turn off immediately
+        except Exception:
+            log.exception("Output off failed")
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def join(self, timeout: float = None):
+        if self._thread is not None:
+            self._thread.join(timeout)
 
     # ── Helpers ───────────────────────────────────────────────────────
     def _status(self, msg):
@@ -135,6 +149,7 @@ class ScanWorker:
                     comp_flag = 0
 
                 # 3. Collect spectrum
+                self._check_stop()
                 wl, raw, corr = self.spectrometer.acquire(subtract_dark=subtract_dark)
                 self._status(f"  Measured: V={meas_v:.4f}, I={meas_i:.6f}  (peak corr: {corr.max():.1f} cts)")
 
@@ -142,7 +157,10 @@ class ScanWorker:
                 self.sourcemeter.output_off()
                 self._status(f"  Output OFF")
 
-                # 5. Write this angle to disk now, so a stop/error keeps it
+                # 5. Write this angle to disk now, so a stop/error keeps it.
+                # A stop during acquisition may have cut the output
+                # mid-spectrum, so that angle is dropped.
+                self._check_stop()
                 if not self.data_worker.is_open():
                     self.data_worker.open(wl)
                 self.data_worker.append(actual, angle, meas_v, meas_i,
