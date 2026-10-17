@@ -10,3 +10,7 @@ scan_data*
 *.cpython*
 __pycache__/hardware_mock.cpython-313.pyc
 __pycache__/scan_worker.cpython-313.pyc
+
+# Local environment
+.venv/
+.env

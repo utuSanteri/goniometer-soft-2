@@ -1,0 +1,14 @@
+# Runtime dependencies. Set up with uv (see README):
+#   uv venv
+#   uv pip install -r requirements.txt
+# The mock (--mock / GONIO_MOCK=1) only needs PyQt5, numpy, matplotlib, pyyaml.
+
+PyQt5>=5.15
+numpy>=1.24
+matplotlib>=3.7
+pyyaml>=6.0
+
+# Instrument drivers
+pyvisa>=1.13        # source meters; also needs NI-VISA installed on the system
+pyserial>=3.5       # Arduino motor controller
+seabreeze>=2.0      # OceanOptics spectrometer

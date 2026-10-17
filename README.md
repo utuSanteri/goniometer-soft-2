@@ -104,21 +104,27 @@ On connection, the Arduino resets and sends `READY` after ~2 seconds.
   [Download from NI](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html).
 
 
-### Python Dependencies
-PyQt5
-numpy
-matplotlib
-pyvisa
-pyserial
-seabreeze
-pyyaml
-Install with:
+### Python Environment
+Python 3.13 (pinned in `.python-version`). Set up a virtual environment with
+[uv](https://docs.astral.sh/uv/):
 
+```
+uv venv                              # creates .venv with Python 3.13
+uv pip install -r requirements.txt
+```
 
-bash
+Then run the app with `uv run python launcher.py`, or activate the venv
+(`.venv\Scripts\activate` on Windows, `source .venv/bin/activate` on
+Linux/macOS) and run `python launcher.py`.
+
+### Environment File
+`.env.example` lists the environment variables the app reads. Copy it to
+`.env` (not committed) and load it with:
+
 ```
-pip install PyQt5 numpy matplotlib pyvisa pyserial seabreeze pyyaml
+uv run --env-file .env python launcher.py
 ```
+
 ___
 
 
