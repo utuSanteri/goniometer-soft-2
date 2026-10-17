@@ -42,6 +42,9 @@ class BaseMotorController(ABC):
     def get_position(self) -> tuple: ...
 
     @abstractmethod
+    def get_angle(self, motor: int) -> float: ...
+
+    @abstractmethod
     def ping(self) -> bool: ...
 
     @abstractmethod

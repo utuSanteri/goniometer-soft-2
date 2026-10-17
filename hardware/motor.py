@@ -108,6 +108,13 @@ class MotorController(BaseMotorController):
         parts = resp.split()
         return int(parts[1]), int(parts[2])
 
+    def get_angle(self, motor: int) -> float:
+        """Actual angle of one motor, read back from its step counter."""
+        steps = self.get_position()[motor - 1]
+        if (motor == 1 and self.m1_invert) or (motor == 2 and self.m2_invert):
+            steps = -steps
+        return steps / self.steps_per_degree
+
     def ping(self) -> bool:
         try:
             return self._cmd("PING") == "PONG"

@@ -62,6 +62,20 @@ class ScanWorker:
         if "on_status" in self.cb:
             self.cb["on_status"](msg)
 
+    def _keep_partial(self, reason: str):
+        """Marks the files as incomplete and tells the user where they are."""
+        try:
+            self.data_worker.finish(reason)
+        except Exception:
+            log.exception("Could not write end note to data files")
+        if self.data_worker.is_open():
+            self._status(
+                f"Partial data kept ({reason}).\n"
+                f"  Spectra    : {self.data_worker.path_spectrum}\n"
+                f"  Sourcemeter: {self.data_worker.path_sourcemeter}")
+        else:
+            self._status("No angles were completed, nothing saved.")
+
     def _check_stop(self):
         if self._stop_event.is_set():
             raise InterruptedError("Scan stopped by user")
@@ -93,16 +107,13 @@ class ScanWorker:
             self._status(f"Scan starting: {total} angles "
                          f"[{ang_start}° → {ang_end}° step {ang_step}°]")
 
-            # Storage
-            all_wavelengths = None
-            data_rows = []   # each row: [angle, raw..., corr...]
-
             for i, angle in enumerate(angles):
                 self._check_stop()
 
                 # Absolute move: angles are measured from the user-set zero
                 self._status(f"Moving to {angle:.3f}°")
                 self.motor.move_to_degrees(motor_id, angle)
+                actual = self.motor.get_angle(motor_id)
                 self._check_stop()
 
                 # ── Power ON ──────────────────────────────────────────
@@ -125,28 +136,26 @@ class ScanWorker:
 
                 # 3. Collect spectrum
                 wl, raw, corr = self.spectrometer.acquire(subtract_dark=subtract_dark)
-                if all_wavelengths is None:        #remove if affects real scan, here for the mock
-                    all_wavelengths = wl         #remove if affects real scan, here for the mock
                 self._status(f"  Measured: V={meas_v:.4f}, I={meas_i:.6f}  (peak corr: {corr.max():.1f} cts)")
 
                 # 4. Power OFF
                 self.sourcemeter.output_off()
                 self._status(f"  Output OFF")
 
-                # 5. Build row matching _save()'s expected format:
-                # [angle, V, I, comp, raw..., corr...]
-                row = [angle, meas_v, meas_i, comp_flag] + raw.tolist() + corr.tolist()
-                data_rows.append(row)
-
+                # 5. Write this angle to disk now, so a stop/error keeps it
+                if not self.data_worker.is_open():
+                    self.data_worker.open(wl)
+                self.data_worker.append(actual, angle, meas_v, meas_i,
+                                        comp_flag, raw, corr)
 
                 # Notify GUI
                 if "on_spectrum" in self.cb:
-                    self.cb["on_spectrum"](angle, wl, corr)
+                    self.cb["on_spectrum"](actual, wl, corr)
                 if "on_progress" in self.cb:
-                    self.cb["on_progress"](i + 1, total, angle)
+                    self.cb["on_progress"](i + 1, total, actual)
 
-            # ── Save data ─────────────────────────────────────────────
-            path_spec, path_src = self.data_worker.save(all_wavelengths, data_rows)
+            path_spec = self.data_worker.path_spectrum
+            path_src  = self.data_worker.path_sourcemeter
             self._status(
                 f"Scan complete.\n"
                 f"  Spectra    : {path_spec}\n"
@@ -156,14 +165,16 @@ class ScanWorker:
                 self.cb["on_finished"]((path_spec, path_src))
 
         except InterruptedError as e:
-            self._status(f"Scan interrupted: {e}")
             self.sourcemeter.output_off()
+            self._status(f"Scan interrupted: {e}")
+            self._keep_partial("stopped by user")
             if "on_finished" in self.cb:
                 self.cb["on_finished"](None)
 
         except Exception as e:
             log.exception("Scan error")
             self.sourcemeter.output_off()
+            self._keep_partial(f"error: {e}")
             if "on_error" in self.cb:
                 self.cb["on_error"](e)
 

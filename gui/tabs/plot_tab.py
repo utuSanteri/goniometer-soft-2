@@ -34,7 +34,9 @@ log = logging.getLogger(__name__)
 
 def load_scan_file(path: str, sourcemeter_path: str = None) -> dict:
     """
-    Load spectrum + sourcemeter files produced by ``_save()``.
+    Load spectrum + sourcemeter files produced by ``DataWorker``.
+    Reads both the per-angle layout and the older stacked layout
+    (all raw rows, then all corrected rows).
 
     Returns dict with keys:
         meta, wl, ang, v, i, comp, raw, corr, path
@@ -79,25 +81,45 @@ def load_scan_file(path: str, sourcemeter_path: str = None) -> dict:
             break
 
     wl_parts = first.split(delimiter)
-    wl = np.array([float(x) for x in wl_parts[1:]])
-    n = len(wl)
-
     body = data_lines[1:]
-    n_angles = len(body) // 2
-    if n_angles == 0 or len(body) != 2 * n_angles:
-        raise ValueError(
-            f"Expected even number of data rows, got {len(body)}")
+    per_angle = len(wl_parts) > 2 and wl_parts[1] == "nominal_deg"
 
-    def _parse_block(block):
-        angles, values = [], []
-        for row in block:
+    if per_angle:
+        # angle_deg ; nominal_deg ; raw|corr ; counts...
+        wl = np.array([float(x) for x in wl_parts[3:]])
+        n = len(wl)
+        rows = {"raw": ([], []), "corr": ([], [])}
+        for row in body:
             parts = row.split(delimiter)
+            angles, values = rows[parts[2]]
             angles.append(float(parts[0]))
-            values.append([float(x) for x in parts[1:1 + n]])
-        return np.array(angles), np.array(values)
+            values.append([float(x) for x in parts[3:3 + n]])
+        ang  = np.array(rows["raw"][0])
+        raw  = np.array(rows["raw"][1])
+        corr = np.array(rows["corr"][1])
+        n_angles = len(ang)
+        if n_angles == 0 or len(corr) != n_angles:
+            raise ValueError(
+                f"Expected one raw and one corr row per angle in {path}")
+    else:
+        wl = np.array([float(x) for x in wl_parts[1:]])
+        n = len(wl)
 
-    ang, raw = _parse_block(body[:n_angles])
-    _, corr  = _parse_block(body[n_angles:])
+        n_angles = len(body) // 2
+        if n_angles == 0 or len(body) != 2 * n_angles:
+            raise ValueError(
+                f"Expected even number of data rows, got {len(body)}")
+
+        def _parse_block(block):
+            angles, values = [], []
+            for row in block:
+                parts = row.split(delimiter)
+                angles.append(float(parts[0]))
+                values.append([float(x) for x in parts[1:1 + n]])
+            return np.array(angles), np.array(values)
+
+        ang, raw = _parse_block(body[:n_angles])
+        _, corr  = _parse_block(body[n_angles:])
 
     # ── Sourcemeter file ──────────────────────────────────────────
     volt = np.zeros(n_angles)
