@@ -187,38 +187,22 @@ class KeysightSourceMeter(BaseSourceMeter):
         """
         self._write(f":SENS{self._ch}:CURR:PROT {a:g}")
 
-    def output_on(self) -> None:
+    def _enable_output(self) -> None:
         self._write(f":OUTP{self._ch} ON")
 
     def output_off(self) -> None:
         self._write(f":OUTP{self._ch} OFF")
 
-    def measure(self) -> float:
-        """
-        Perform a spot measurement and return the result as a float.
+    def measure_voltage(self) -> float:
+        return self._query_float(f":MEAS:VOLT? (@{self._ch})")
 
-        Returns the complementary quantity to the source mode:
-          - Voltage-source mode → returns measured current (A).
-          - Current-source mode → returns measured voltage (V).
-        """
-        sense_mode = (
-            _CURRENT_MODE
-            if self.source_mode == _VOLTAGE_MODE
-            else _VOLTAGE_MODE
-        )
-        return self._query_float(f":MEAS:{sense_mode}? (@{self._ch})")
+    def measure_current(self) -> float:
+        return self._query_float(f":MEAS:CURR? (@{self._ch})")
 
-    def verify_operation(self) -> dict:
-        tripped = bool(int(
-            self._query(f":SENS{self._ch}:CURR:PROT:TRIP?").strip()
+    def in_compliance(self) -> bool:
+        """Protection-tripped flag of the limited quantity: current in
+        VOLT mode, voltage in CURR mode."""
+        limited = "CURR" if self.source_mode == _VOLTAGE_MODE else "VOLT"
+        return bool(int(
+            self._query(f":SENS{self._ch}:{limited}:PROT:TRIP?").strip()
         ))
-        measured = self.measure()
-        return {
-            "mode":          self.source_mode,
-            "measured":      measured,
-            "limit":         None,        # not tracked here
-            "compliance_hw": tripped,
-            "signal_ok":     True,        # Keysight doesn't do threshold check
-            "compliance_ok": not tripped,
-            "ok":            not tripped,
-        }

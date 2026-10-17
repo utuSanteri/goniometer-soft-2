@@ -163,21 +163,18 @@ class SourceMeter(BaseSourceMeter):
             self._configure()
 
     # ── Output control ────────────────────────────────────────────────
-    def output_on(self):
+    def _enable_output(self):
         if not self._dev:
             raise RuntimeError("SourceMeter not connected")
         self._write(":OUTP ON")
-        time.sleep(self.settle_ms / 1000.0)
         self._check_errors()
-        if self.verify_on_output_on:
-            self.verify_operation()
 
     def output_off(self):
         if self._dev:
             self._write(":OUTP OFF")
 
-    # ── Verification ──────────────────────────────────────────────────
-    def _is_in_compliance_hw(self) -> bool:
+    # ── Compliance ────────────────────────────────────────────────────
+    def in_compliance(self) -> bool:
         try:
             qsr = int(self._query(":STAT:QUES:COND?"))
             if self.source_mode == "VOLT":
@@ -188,92 +185,12 @@ class SourceMeter(BaseSourceMeter):
             log.debug("Could not read Questionable Status Register: %s", exc)
             return False
 
-    def verify_operation(self) -> dict:
-        """
-        Measure the output and verify two conditions:
-
-        1. **Signal present** – the measured quantity is above a minimum
-           threshold, confirming the circuit is complete.
-        2. **No compliance / saturation** – the measured quantity is below
-           ``compliance_fraction`` × the configured limit *and* the
-           instrument's own compliance bit is not set.
-
-        Returns a result dict with keys: mode, measured, limit,
-        compliance_hw, signal_ok, compliance_ok, ok.
-
-        Raises SourceMeterError if either check fails.
-        """
-        measured = self.measure()
-        hw_compliance = self._is_in_compliance_hw()
-
-        if self.source_mode == "VOLT":
-            limit     = self.current_limit
-            threshold = self.current_threshold
-            quantity  = "current"
-            unit      = "A"
-        else:
-            limit     = self.voltage
-            threshold = self.voltage_threshold
-            quantity  = "voltage"
-            unit      = "V"
-
-        soft_limit    = self.compliance_fraction * limit
-        signal_ok     = abs(measured) >= threshold
-        sw_comp_ok    = abs(measured) < soft_limit
-        compliance_ok = sw_comp_ok and not hw_compliance
-
-        result = {
-            "mode":          self.source_mode,
-            "measured":      measured,
-            "limit":         limit,
-            "compliance_hw": hw_compliance,
-            "signal_ok":     signal_ok,
-            "compliance_ok": compliance_ok,
-            "ok":            signal_ok and compliance_ok,
-        }
-
-        log.info(
-            "Verification [%s mode]: measured %s = %.6g %s  "
-            "(threshold=%.3g, soft_limit=%.3g, hw_compliance=%s)",
-            self.source_mode, quantity, measured, unit,
-            threshold, soft_limit, hw_compliance,
-        )
-
-        if not signal_ok:
-            msg = (
-                f"[{self.source_mode} mode] Measured {quantity} "
-                f"({measured:.6g} {unit}) is below the minimum expected "
-                f"threshold ({threshold:.3g} {unit}).  "
-                f"Possible open circuit or disconnected load."
-            )
-            log.error(msg)
-            raise SourceMeterError(msg)
-
-        if not compliance_ok:
-            if hw_compliance:
-                reason = "hardware compliance bit is set"
-            else:
-                reason = (
-                    f"measured {quantity} ({measured:.6g} {unit}) "
-                    f">= {self.compliance_fraction*100:.0f}% of limit "
-                    f"({soft_limit:.6g} {unit})"
-                )
-            msg = (
-                f"[{self.source_mode} mode] Source is saturating / in "
-                f"compliance: {reason}.  "
-                f"Possible short circuit or incorrect limit setting."
-            )
-            log.error(msg)
-            raise SourceMeterError(msg)
-
-        log.info("Verification passed: signal present, no compliance detected.")
-        return result
-
     # ── Measurement ───────────────────────────────────────────────────
-    def measure(self) -> float:
-        cmd  = ":MEAS:CURR?" if self.source_mode == "VOLT" else ":MEAS:VOLT?"
-        resp = self._query(cmd)
-        return float(resp.split(",")[0].strip())
+    def measure_voltage(self) -> float:
+        return float(self._query(":MEAS:VOLT?").split(",")[0].strip())
+
+    def measure_current(self) -> float:
+        return float(self._query(":MEAS:CURR?").split(",")[0].strip())
 
     def get_output_state(self) -> bool:
         resp = self._query(":OUTP?").strip()

@@ -136,17 +136,11 @@ class ScanWorker:
                 self._check_stop()
 
                 # 1. Capture both measured Voltage and Current
-                # (measure() only returns one quantity, so we query both explicitly)
-                meas_v = float(self.sourcemeter._query(":MEAS:VOLT?").split(",")[0].strip())
-                meas_i = float(self.sourcemeter._query(":MEAS:CURR?").split(",")[0].strip())
+                meas_v = self.sourcemeter.measure_voltage()
+                meas_i = self.sourcemeter.measure_current()
 
                 # 2. Capture compliance status explicitly as 0 or 1
-                try:
-                    qsr = int(self.sourcemeter._query(":STAT:QUES:COND?"))
-                    bit_mask = 0b10 if self.sourcemeter.source_mode == "VOLT" else 0b01
-                    comp_flag = int(bool(qsr & bit_mask))
-                except Exception:
-                    comp_flag = 0
+                comp_flag = int(self.sourcemeter.in_compliance())
 
                 # 3. Collect spectrum
                 self._check_stop()

@@ -487,6 +487,19 @@ class SourceMeter:
                   val, "A" if self.source_mode == "VOLT" else "V")
         return val
     
+    def measure_voltage(self) -> float:
+        self._require_connected()
+        return (self._simulated_voltage() if self.source_mode == "CURR"
+                else self.voltage)
+
+    def measure_current(self) -> float:
+        self._require_connected()
+        return (self._simulated_current() if self.source_mode == "VOLT"
+                else self.current_limit)
+
+    def in_compliance(self) -> bool:
+        return self._is_in_compliance_hw()
+
     def _query(self, cmd: str) -> str:
         """Simulate SCPI query responses for testing."""
         cmd = cmd.strip().upper()
