@@ -12,3 +12,6 @@ class HardwareState:
         self.motor = None
         self.spec = None
         self.source = None
+        # True once the user has set the angle zero since the motor
+        # controller was last connected (the Arduino resets on connect).
+        self.zero_valid = False

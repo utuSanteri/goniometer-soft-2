@@ -120,6 +120,12 @@ class MainWindow(QMainWindow):
         self.tab_spec.sig_plot.connect(self.plot_panel.plot_spectrum)
         self.tab_manual.sig_plot.connect(self.plot_panel.plot_spectrum)
 
+        # Angle zero: lost on every motor connect, restored by Set Zero
+        self.tab_connect.sig_motor_connected.connect(
+            lambda: self._set_zero_valid(False))
+        self.tab_manual.sig_zero_set.connect(
+            lambda: self._set_zero_valid(True))
+
         # Scan lifecycle
         self.tab_scan.sig_start_requested.connect(self._start_scan)
         self.tab_scan.sig_stop_requested.connect(self._stop_scan)
@@ -145,6 +151,12 @@ class MainWindow(QMainWindow):
     def _start_scan(self):
         if not self.hw.motor:
             QMessageBox.critical(self, "Error", "Motor not connected")
+            return
+        if not self.hw.zero_valid:
+            QMessageBox.critical(
+                self, "Error",
+                "Angle zero not set since the motor was connected.\n"
+                "Set it on the Manual tab first.")
             return
         if not self.hw.spec:
             QMessageBox.critical(
@@ -183,6 +195,13 @@ class MainWindow(QMainWindow):
         self.tab_scan.set_running(True)
         self.progress.setValue(0)
         log.info("Scan started")
+
+    def _set_zero_valid(self, valid: bool):
+        self.hw.zero_valid = valid
+        self.tab_scan.set_zero_valid(valid)
+        if not valid:
+            log.warning("Motor connected: angle zero must be set before "
+                        "scanning (Manual tab)")
 
     def _stop_scan(self):
         if self.worker:

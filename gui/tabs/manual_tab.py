@@ -18,7 +18,8 @@ log = logging.getLogger(__name__)
 class ManualTab(QWidget):
     """Manual motor jog, position, and single-spectrum acquisition."""
 
-    sig_plot = pyqtSignal(object, object, object)   # angle, wl, counts
+    sig_plot     = pyqtSignal(object, object, object)   # angle, wl, counts
+    sig_zero_set = pyqtSignal()
 
     def __init__(self, hw, cfg, get_subtract_dark, parent=None):
         """
@@ -136,8 +137,13 @@ class ManualTab(QWidget):
 
     def _zero_motors(self):
         if self.hw.motor:
-            self.hw.motor.zero()
+            try:
+                self.hw.motor.zero()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+                return
             self.lbl_pos.setText("Position: zeroed")
+            self.sig_zero_set.emit()
 
     def _home_motors(self):
         if self.hw.motor:

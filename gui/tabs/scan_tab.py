@@ -19,7 +19,10 @@ class ScanTab(QWidget):
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
         self.cfg = cfg
+        self._running    = False
+        self._zero_valid = False
         self._build_ui()
+        self._update_start_button()
 
     # ── UI ────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -115,8 +118,20 @@ class ScanTab(QWidget):
         }
 
     def set_running(self, running: bool):
-        self.btn_start.setEnabled(not running)
+        self._running = running
         self.btn_stop.setEnabled(running)
+        self._update_start_button()
+
+    def set_zero_valid(self, valid: bool):
+        self._zero_valid = valid
+        self._update_start_button()
+
+    def _update_start_button(self):
+        self.btn_start.setEnabled(self._zero_valid and not self._running)
+        self.btn_start.setToolTip(
+            "" if self._zero_valid else
+            "Set the angle zero first (Manual tab → Set Current Position "
+            "as Zero). Required after every motor connect.")
 
     # ── Private ───────────────────────────────────────────────────────
     def _browse_dir(self):
