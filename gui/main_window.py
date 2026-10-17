@@ -173,7 +173,9 @@ class MainWindow(QMainWindow):
                 self, "Error", "Source meter not connected")
             return
 
-        self.tab_spec.apply_settings()
+        if not self.tab_spec.apply_settings():
+            log.error("Scan not started: spectrometer settings rejected")
+            return
         self.tab_source.apply_settings()
 
         params = self.tab_scan.get_params()

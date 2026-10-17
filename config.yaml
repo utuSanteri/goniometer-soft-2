@@ -19,7 +19,8 @@ motors:
 
 spectrometer:
   model_hint: "USB2000+"           # informational only; seabreeze auto-detects
-  default_integration_time_ms: 100 # absolute minimum allowed for USB2000+ spectrometer
+  default_integration_time_ms: 100
+  min_integration_time_ms: 3       # lowest value the software accepts
   default_scans_to_average: 3      
   default_boxcar_width: 2          # not typically needed
   wavelength_min_nm: 200           # crop range for saved data

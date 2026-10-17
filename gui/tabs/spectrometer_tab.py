@@ -37,7 +37,8 @@ class SpectrometerTab(QWidget):
 
         g.addWidget(QLabel("Integration time (ms):"), 0, 0)
         self.spn_inttime = QDoubleSpinBox()
-        self.spn_inttime.setRange(1, 60000)
+        self.spn_inttime.setRange(
+            self.cfg["spectrometer"].get("min_integration_time_ms", 3), 60000)
         self.spn_inttime.setValue(
             self.cfg["spectrometer"]["default_integration_time_ms"])
         self.spn_inttime.valueChanged.connect(self.apply_settings)
@@ -58,6 +59,11 @@ class SpectrometerTab(QWidget):
             self.cfg["spectrometer"]["default_boxcar_width"])
         self.spn_boxcar.valueChanged.connect(self.apply_settings)
         g.addWidget(self.spn_boxcar, 2, 1)
+
+        # Apply on Enter / focus-out / arrow step only, not on every
+        # keystroke (clearing a digit mid-edit used to raise "too low")
+        for spn in (self.spn_inttime, self.spn_avg, self.spn_boxcar):
+            spn.setKeyboardTracking(False)
 
         self.chk_dark = QCheckBox("Subtract dark spectrum")
         self.chk_dark.setChecked(True)
@@ -86,32 +92,32 @@ class SpectrometerTab(QWidget):
         lay.addStretch()
 
     # ── Public ────────────────────────────────────────────────────────
-    def apply_settings(self):
+    def apply_settings(self) -> bool:
+        """Pushes the spinner values to the spectrometer. Returns False if
+        a value was rejected; the spinner then reverts to the last valid
+        value."""
         if not self.hw.spec:
-            return
+            return True
+        ok = True
         try:
-            self.hw.spec.set_integration_time(self.spn_inttime.value())
-    
-            # Snap spinner to whatever the device is actually using
-            # (in case the value was clamped)
-            self.spn_inttime.blockSignals(True)
-            self.spn_inttime.setValue(self.hw.spec.integration_time_ms)
-            self.spn_inttime.blockSignals(False)
-    
             self.hw.spec.set_scans_to_average(self.spn_avg.value())
             self.hw.spec.set_boxcar_width(self.spn_boxcar.value())
-    
+            self.hw.spec.set_integration_time(self.spn_inttime.value())
         except ValueError as e:
+            ok = False
             QMessageBox.warning(
                 self, "Integration Time Out of Range", str(e))
-            self.spn_inttime.blockSignals(True)
-            self.spn_inttime.setValue(self.hw.spec.integration_time_ms)
-            self.spn_inttime.blockSignals(False)
-    
         except Exception as e:
+            ok = False
             QMessageBox.critical(self, "Spectrometer Error", str(e))
 
+        # Show what the device is actually using
+        self.spn_inttime.blockSignals(True)
+        self.spn_inttime.setValue(self.hw.spec.integration_time_ms)
+        self.spn_inttime.blockSignals(False)
+
         self._check_dark_settings()
+        return ok
 
     # ── Private ───────────────────────────────────────────────────────
     def _current_settings(self) -> tuple:

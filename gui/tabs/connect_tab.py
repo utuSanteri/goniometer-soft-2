@@ -105,6 +105,7 @@ class ConnectTab(QWidget):
                 boxcar_width=s["default_boxcar_width"],
                 wl_min=s["wavelength_min_nm"],
                 wl_max=s["wavelength_max_nm"],
+                min_integration_time_ms=s.get("min_integration_time_ms", 3),
             )
             self.hw.spec.connect()
             self.lbl_spec_status.setText("● Connected")

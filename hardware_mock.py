@@ -177,7 +177,6 @@ class Spectrometer:
     """
 
     # Hardware limits for the USB2000+ (milliseconds)
-    _MIN_INTTIME_MS = 100.0
     _MAX_INTTIME_MS = 60_000.0
 
     # Simulated wavelength grid
@@ -188,7 +187,9 @@ class Spectrometer:
                  scans_to_average: int = 3,
                  boxcar_width: int = 2,
                  wl_min: float = 200.0,
-                 wl_max: float = 1100.0):
+                 wl_max: float = 1100.0,
+                 min_integration_time_ms: float = 3.0):
+        self._MIN_INTTIME_MS     = float(min_integration_time_ms)
         self.integration_time_ms = float(integration_time_ms)
         self.scans_to_average    = max(1, scans_to_average)
         self.boxcar_width        = max(0, boxcar_width)
@@ -215,24 +216,19 @@ class Spectrometer:
     # ── Settings ──────────────────────────────────────────────────────
     def set_integration_time(self, ms: float) -> float:
         """
-        Clamp to hardware limits and return the value actually set.
-        Raises ValueError if the requested value is outside the allowed range,
+        Returns the value set. Raises ValueError if the requested value is
+        outside the allowed range and leaves the current one unchanged,
         matching the behaviour of the real driver.
         """
         if ms < self._MIN_INTTIME_MS:
-            # Clamp and raise so the GUI can react
-            self.integration_time_ms = self._MIN_INTTIME_MS
             raise ValueError(
                 f"Integration time {ms:.2f} ms is below the minimum "
-                f"allowed by this device ({self._MIN_INTTIME_MS:.2f} ms).\n"
-                f"Value has been clamped to {self._MIN_INTTIME_MS:.2f} ms."
+                f"of {self._MIN_INTTIME_MS:.2f} ms."
             )
         if ms > self._MAX_INTTIME_MS:
-            self.integration_time_ms = self._MAX_INTTIME_MS
             raise ValueError(
                 f"Integration time {ms:.2f} ms exceeds the maximum "
-                f"allowed by this device ({self._MAX_INTTIME_MS:.2f} ms).\n"
-                f"Value has been clamped to {self._MAX_INTTIME_MS:.2f} ms."
+                f"of {self._MAX_INTTIME_MS:.2f} ms."
             )
         self.integration_time_ms = float(ms)
         log.debug("[MOCK] Integration time set to %.1f ms", ms)

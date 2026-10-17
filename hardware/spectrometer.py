@@ -18,8 +18,10 @@ class Spectrometer(BaseSpectrometer):
                  scans_to_average: int = 3,
                  boxcar_width: int = 2,
                  wl_min: float = 200.0,
-                 wl_max: float = 1100.0):
+                 wl_max: float = 1100.0,
+                 min_integration_time_ms: float = 3.0):
         self._spec = None
+        self.min_integration_time_ms = min_integration_time_ms
         self.integration_time_ms = integration_time_ms
         self.scans_to_average = scans_to_average
         self.boxcar_width = boxcar_width
@@ -51,15 +53,16 @@ class Spectrometer(BaseSpectrometer):
 
     # ── Settings ──────────────────────────────────────────────────────
     def set_integration_time(self, ms: float):
-        self.integration_time_ms = ms
-        if self.integration_time_ms < 100:
+        """Validates first; a rejected value leaves the current one
+        unchanged."""
+        if ms < self.min_integration_time_ms:
             raise ValueError(
                 f"Integration time {ms:.2f} ms is below the minimum "
-                f"allowed by this device (100.00 ms).\n"
-                f"Value must be at least 100 ms."
+                f"of {self.min_integration_time_ms:.2f} ms."
             )
-        elif self._spec:
+        if self._spec:
             self._spec.integration_time_micros(int(ms * 1000))
+        self.integration_time_ms = ms
 
     def set_scans_to_average(self, n: int):
         self.scans_to_average = max(1, n)
