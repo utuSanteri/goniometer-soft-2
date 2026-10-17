@@ -178,6 +178,14 @@ class MainWindow(QMainWindow):
 
         params = self.tab_scan.get_params()
         params["subtract_dark"] = self.tab_spec.subtract_dark
+        if params["subtract_dark"] and not self.hw.spec.has_dark():
+            QMessageBox.critical(
+                self, "Error",
+                "Dark subtraction is on, but there is no valid dark "
+                "spectrum (none collected, or settings changed since).\n"
+                "Collect a dark on the Spectrometer tab, or untick "
+                "'Subtract dark spectrum'.")
+            return
 
         bridge = self.bridge
         callbacks = {

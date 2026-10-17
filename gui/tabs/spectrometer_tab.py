@@ -19,6 +19,9 @@ class SpectrometerTab(QWidget):
         super().__init__(parent)
         self.hw  = hw
         self.cfg = cfg
+        # (integration ms, averages, boxcar) the stored dark was taken
+        # with. The dark is only valid for exactly these settings.
+        self._dark_settings = None
         self._build_ui()
 
     @property
@@ -107,7 +110,28 @@ class SpectrometerTab(QWidget):
     
         except Exception as e:
             QMessageBox.critical(self, "Spectrometer Error", str(e))
+
+        self._check_dark_settings()
+
     # ── Private ───────────────────────────────────────────────────────
+    def _current_settings(self) -> tuple:
+        s = self.hw.spec
+        return (s.integration_time_ms, s.scans_to_average, s.boxcar_width)
+
+    def _check_dark_settings(self):
+        """Clears the dark if the acquisition settings no longer match
+        the ones it was taken with."""
+        if self._dark_settings is None or not self.hw.spec.has_dark():
+            return
+        if self._current_settings() == self._dark_settings:
+            return
+        self.hw.spec.clear_dark()
+        self._dark_settings = None
+        self.lbl_dark_status.setText(
+            "⚠ Dark outdated (settings changed), collect again")
+        self.lbl_dark_status.setStyleSheet("color: #e67e22")
+        log.warning("Acquisition settings changed: dark spectrum cleared")
+
     def _collect_dark(self):
         if not self.hw.spec:
             QMessageBox.warning(
@@ -115,6 +139,7 @@ class SpectrometerTab(QWidget):
             return
         try:
             self.hw.spec.collect_dark()
+            self._dark_settings = self._current_settings()
             self.lbl_dark_status.setText("✓ Dark spectrum stored")
             self.lbl_dark_status.setStyleSheet("color: green")
         except Exception as e:
@@ -123,6 +148,7 @@ class SpectrometerTab(QWidget):
     def _clear_dark(self):
         if self.hw.spec:
             self.hw.spec.clear_dark()
+        self._dark_settings = None
         self.lbl_dark_status.setText("No dark spectrum")
         self.lbl_dark_status.setStyleSheet("")
 
