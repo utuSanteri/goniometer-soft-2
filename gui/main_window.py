@@ -180,14 +180,26 @@ class MainWindow(QMainWindow):
             params, callbacks,
         )
         self.worker.start()
-        self.tab_scan.set_running(True)
+        self._set_scan_running(True)
         self.progress.setValue(0)
         log.info("Scan started")
 
     def _stop_scan(self):
         if self.worker:
             self.worker.stop()
-        self.tab_scan.set_running(False)
+        # Tabs stay locked until the worker reports it has finished
+        # (via _on_finished / _on_error), so nothing races its last step.
+        self.tab_scan.btn_stop.setEnabled(False)
+        self.lbl_status.setText("Stopping…")
+
+    def _set_scan_running(self, running: bool):
+        """Lock out tabs that talk to the hardware while a scan runs,
+        so the GUI thread and the scan thread never use the same
+        instrument at the same time."""
+        self.tab_scan.set_running(running)
+        for tab in (self.tab_connect, self.tab_spec,
+                    self.tab_source, self.tab_manual):
+            tab.setEnabled(not running)
 
     # ─────────────────────────────────────────────────────────────────
     #  Bridge slots
@@ -202,7 +214,7 @@ class MainWindow(QMainWindow):
         self.lbl_status.setText(msg[:80])
 
     def _on_finished(self, paths):
-        self.tab_scan.set_running(False)
+        self._set_scan_running(False)
         self.progress.setValue(100)
 
         if paths:
@@ -217,7 +229,7 @@ class MainWindow(QMainWindow):
             self.lbl_status.setText("Scan stopped")
 
     def _on_error(self, tb: str):
-        self.tab_scan.set_running(False)
+        self._set_scan_running(False)
         QMessageBox.critical(self, "Scan Error", tb)
         log.error("Scan error:\n%s", tb)
 

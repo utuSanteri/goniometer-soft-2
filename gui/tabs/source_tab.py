@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont
 
 from gui.hw_imports import SourceMeterError
+from gui.widgets.current_input import CurrentInput
 
 log = logging.getLogger(__name__)
 
@@ -44,12 +45,11 @@ class SourceTab(QWidget):
             self.cfg["sourcemeter"]["default_voltage_v"])
         g.addWidget(self.spn_voltage, 1, 1)
 
-        g.addWidget(QLabel("Current limit (A):"), 2, 0)
-        self.spn_current = QDoubleSpinBox()
-        self.spn_current.setRange(0, 1.05)
-        self.spn_current.setDecimals(4)
-        self.spn_current.setValue(
-            self.cfg["sourcemeter"]["default_current_limit_a"])
+        g.addWidget(QLabel("Current limit:"), 2, 0)
+        self.spn_current = CurrentInput(
+            max_amps=1.05,
+            amps=self.cfg["sourcemeter"]["default_current_limit_a"],
+            unit=self.cfg["sourcemeter"].get("current_limit_unit", "mA"))
         g.addWidget(self.spn_current, 2, 1)
 
         g.addWidget(QLabel("Settle time (ms):"), 3, 0)
@@ -76,13 +76,11 @@ class SourceTab(QWidget):
             "automatically after Output ON.")
         gv.addWidget(self.chk_verify, 0, 0, 1, 2)
 
-        gv.addWidget(QLabel("Current threshold (A):"), 1, 0)
-        self.spn_curr_thresh = QDoubleSpinBox()
-        self.spn_curr_thresh.setRange(0.0, 1.05)
-        self.spn_curr_thresh.setDecimals(9)
-        self.spn_curr_thresh.setSingleStep(1e-6)
-        self.spn_curr_thresh.setValue(
-            self.cfg["sourcemeter"].get("current_threshold_a", 1e-6))
+        gv.addWidget(QLabel("Current threshold:"), 1, 0)
+        self.spn_curr_thresh = CurrentInput(
+            max_amps=1.05,
+            amps=self.cfg["sourcemeter"].get("current_threshold_a", 1e-6),
+            unit=self.cfg["sourcemeter"].get("current_threshold_unit", "µA"))
         self.spn_curr_thresh.setToolTip(
             "Minimum expected current (VOLT mode).  "
             "A measurement below this raises a signal-absent error.")
@@ -157,9 +155,9 @@ class SourceTab(QWidget):
             self.hw.source.set_source_mode(
                 self.cmb_source_mode.currentText())
             self.hw.source.set_voltage(self.spn_voltage.value())
-            self.hw.source.set_current_limit(self.spn_current.value())
+            self.hw.source.set_current_limit(self.spn_current.amps())
             self.hw.source.settle_ms           = self.spn_settle.value()
-            self.hw.source.current_threshold   = self.spn_curr_thresh.value()
+            self.hw.source.current_threshold   = self.spn_curr_thresh.amps()
             self.hw.source.voltage_threshold   = self.spn_volt_thresh.value()
             self.hw.source.compliance_fraction = self.spn_comp_frac.value()
             self.hw.source.verify_on_output_on = self.chk_verify.isChecked()

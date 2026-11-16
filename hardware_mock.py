@@ -108,6 +108,27 @@ class MotorController:
         direction = 1 if degrees >= 0 else 0
         self.move_steps(motor, steps, direction)
 
+    def _inverted(self, motor: int) -> bool:
+        return ((motor == 1 and self.m1_invert) or
+                (motor == 2 and self.m2_invert))
+
+    def get_angle(self, motor: int) -> float:
+        """Current absolute angle (deg) of a motor relative to zero."""
+        steps = self.get_position()[motor - 1]
+        if self._inverted(motor):
+            steps = -steps     # controller counts in the flipped direction
+        return steps / self.steps_per_degree
+
+    def move_to_degrees(self, motor: int, degrees: float):
+        """Move a motor to an absolute angle (deg) relative to zero."""
+        steps = self.get_position()[motor - 1]
+        if self._inverted(motor):
+            steps = -steps
+        target = int(round(degrees * self.steps_per_degree))
+        delta = target - steps
+        if delta:
+            self.move_steps(motor, abs(delta), 1 if delta > 0 else 0)
+
     def stop(self):
         self._require_connected()
         log.info("[MOCK] Motors stopped")

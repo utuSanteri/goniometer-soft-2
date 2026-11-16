@@ -4,6 +4,7 @@ Keithley 2461 source-meter.
 
 import time
 import logging
+import threading
 
 from hardware._base import BaseSourceMeter
 from hardware._visa import get_resource_manager
@@ -58,6 +59,9 @@ class SourceMeter(BaseSourceMeter):
                  verify_on_output_on: bool = True):
         self._rm   = None
         self._inst = None
+        # Scan thread and GUI thread (Stop button) may both talk to the
+        # instrument; serialise access so writes/queries never interleave.
+        self._io_lock = threading.RLock()
         self.resource      = resource
         self.source_mode   = source_mode.upper()
         self.voltage       = voltage
@@ -99,10 +103,12 @@ class SourceMeter(BaseSourceMeter):
 
     # ── Low-level helpers ─────────────────────────────────────────────
     def _write(self, cmd: str):
-        self._inst.write(cmd)
+        with self._io_lock:
+            self._inst.write(cmd)
 
     def _query(self, cmd: str) -> str:
-        return self._inst.query(cmd).strip()
+        with self._io_lock:
+            return self._inst.query(cmd).strip()
 
     def _check_errors(self) -> bool:
         errors = []

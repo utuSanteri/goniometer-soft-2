@@ -96,22 +96,22 @@ class ScanWorker:
             data_rows = []   # each row: [angle, raw..., corr...]
 
             # ── Move to start angle ───────────────────────────────────
-            self._status(f"Moving to start angle {ang_start}°...")
-            self.motor.move_degrees(motor_id, ang_start)
+            # Angles are absolute (relative to the zero / home position),
+            # so the scan starts at the right place no matter where the
+            # previous scan or a manual jog left the motor.
+            here = self.motor.get_angle(motor_id)
+            self._status(f"Moving to start angle {ang_start}° "
+                         f"(currently at {here:.2f}°)...")
+            self.motor.move_to_degrees(motor_id, ang_start)
             self._check_stop()
-
-            prev_angle = ang_start
 
             for i, angle in enumerate(angles):
                 self._check_stop()
 
-                # Move delta from previous position
                 if i > 0:
-                    delta = angle - prev_angle
-                    self._status(f"Moving {delta:+.3f}° → {angle:.3f}°")
-                    self.motor.move_degrees(motor_id, delta)
+                    self._status(f"Moving → {angle:.3f}°")
+                    self.motor.move_to_degrees(motor_id, angle)
                     self._check_stop()
-                prev_angle = angle
 
                 # ── Power ON ──────────────────────────────────────────
                 self._status(f"[{i+1}/{total}] Angle {angle:.3f}° — output ON")

@@ -37,6 +37,8 @@ class SpectrometerTab(QWidget):
         self.spn_inttime.setRange(1, 60000)
         self.spn_inttime.setValue(
             self.cfg["spectrometer"]["default_integration_time_ms"])
+        # Only apply on Enter / focus-out / arrow keys, not every keystroke
+        self.spn_inttime.setKeyboardTracking(False)
         self.spn_inttime.valueChanged.connect(self.apply_settings)
         g.addWidget(self.spn_inttime, 0, 1)
 
@@ -45,6 +47,7 @@ class SpectrometerTab(QWidget):
         self.spn_avg.setRange(1, 100)
         self.spn_avg.setValue(
             self.cfg["spectrometer"]["default_scans_to_average"])
+        self.spn_avg.setKeyboardTracking(False)
         self.spn_avg.valueChanged.connect(self.apply_settings)
         g.addWidget(self.spn_avg, 1, 1)
 
@@ -53,6 +56,7 @@ class SpectrometerTab(QWidget):
         self.spn_boxcar.setRange(0, 20)
         self.spn_boxcar.setValue(
             self.cfg["spectrometer"]["default_boxcar_width"])
+        self.spn_boxcar.setKeyboardTracking(False)
         self.spn_boxcar.valueChanged.connect(self.apply_settings)
         g.addWidget(self.spn_boxcar, 2, 1)
 

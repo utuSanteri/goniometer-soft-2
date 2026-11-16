@@ -4,3 +4,4 @@ scan_data*
 build/
 dist/
 *.spec
+goniometer.log

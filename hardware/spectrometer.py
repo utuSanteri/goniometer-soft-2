@@ -51,15 +51,16 @@ class Spectrometer(BaseSpectrometer):
 
     # ── Settings ──────────────────────────────────────────────────────
     def set_integration_time(self, ms: float):
-        self.integration_time_ms = ms
-        if self.integration_time_ms < 100:
+        # Validate before storing so a rejected value doesn't stick
+        if ms < 100:
             raise ValueError(
                 f"Integration time {ms:.2f} ms is below the minimum "
                 f"allowed by this device (100.00 ms).\n"
                 f"Value must be at least 100 ms."
             )
-        elif self._spec:
+        if self._spec:
             self._spec.integration_time_micros(int(ms * 1000))
+        self.integration_time_ms = ms
 
     def set_scans_to_average(self, n: int):
         self.scans_to_average = max(1, n)
