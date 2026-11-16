@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QPushButton, QFileDialog, QCheckBox,
     QComboBox, QMessageBox, QSizePolicy, QSpacerItem,
+    QDoubleSpinBox, QFormLayout,
 )
 from PyQt5.QtCore import pyqtSignal
 
@@ -22,8 +23,11 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-from matplotlib.colors import Normalize
-from matplotlib.gridspec import GridSpec
+
+from gui.plot_style import (
+    OI, MAP_CMAP, MM, DOUBLE, SCREEN_SCALE,
+    nature_rc, panel_labels, style_colorbar,
+)
 
 log = logging.getLogger(__name__)
 
@@ -139,13 +143,104 @@ def load_scan_file(path: str, sourcemeter_path: str = None) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Figure  (shared by the on-screen canvas and the export)
+# ═══════════════════════════════════════════════════════════════════
+
+def _trapz(y, x, axis=-1):
+    f = getattr(np, "trapezoid", None) or np.trapz
+    return f(y, x, axis=axis)
+
+
+def draw_analysis(fig, d: dict, show_raw: bool = False,
+                  normal_angle: float = 0.0, scale: float = 1.0):
+    """
+    Draw the scan analysis into *fig* (call inside
+    ``matplotlib.rc_context(nature_rc(scale))``):
+
+    a  angle–wavelength intensity map (angle on x)
+    b  integrated intensity vs angle with the Lambertian reference
+    c  the same, normalised at the surface normal, on a polar plot
+    """
+    o = np.argsort(d['ang'], kind='stable')
+    ang  = d['ang'][o]
+    wl   = d['wl']
+    sp   = (d['raw'] if show_raw else d['corr'])[o]
+    comp = d['comp'][o]
+    label = 'Raw' if show_raw else 'Dark-corrected'
+
+    I = _trapz(sp, wl, axis=1)
+    j0 = int(np.argmin(np.abs(ang - normal_angle)))
+    I0 = I[j0] if I[j0] > 0 else np.nanmax(I)
+    if not I0 > 0:
+        I0 = 1.0
+    In = I / I0
+
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.1],
+                          width_ratios=[1.25, 1])
+    ax_m = fig.add_subplot(gs[0, :])
+    ax_i = fig.add_subplot(gs[1, 0])
+    ax_p = fig.add_subplot(gs[1, 1], projection='polar')
+
+    comp_kw = dict(marker='x', color=OI['vermillion'], s=14 * scale**2,
+                   lw=0.7 * scale, zorder=5, label='In compliance')
+
+    # ── a  Heatmap: angle on x, wavelength on y ──────────────────
+    im = ax_m.pcolormesh(ang, wl, sp.T, shading='nearest',
+                         cmap=MAP_CMAP, rasterized=True)
+    ax_m.set(xlabel='Angle (°)', ylabel='Wavelength (nm)')
+    for s_ in ax_m.spines.values():
+        s_.set_visible(True)
+    cb = fig.colorbar(im, ax=ax_m, pad=0.02, aspect=30)
+    style_colorbar(cb, f'{label} intensity (counts)', scale)
+
+    # ── b  Linear angular dispersion ─────────────────────────────
+    ax_i.plot(ang, I, 'o-', color=OI['blue'], label='Measured')
+    if len(ang) > 1:
+        tt = np.linspace(ang.min(), ang.max(), 361)
+        lam = I0 * np.clip(np.cos(np.deg2rad(tt - normal_angle)), 0, None)
+        ax_i.plot(tt, lam, '--', color=OI['black'], lw=0.6 * scale,
+                  label='Lambertian')
+    if comp.any():
+        ax_i.scatter(ang[comp], I[comp], **comp_kw)
+    ax_i.set(xlabel='Angle (°)',
+             ylabel='Integrated intensity (counts nm)')
+    ax_i.legend(loc='best')
+
+    # ── c  Polar angular dispersion ──────────────────────────────
+    th = np.deg2rad(ang - normal_angle)
+    ax_p.plot(th, In, 'o-', color=OI['blue'])
+    if len(th) > 1:
+        tt = np.linspace(th.min(), th.max(), 361)
+        ax_p.plot(tt, np.clip(np.cos(tt), 0, None), '--',
+                  color=OI['black'], lw=0.6 * scale)
+    if comp.any():
+        ax_p.scatter(th[comp], In[comp], **comp_kw)
+    ax_p.set_theta_zero_location('N')
+    ax_p.set_theta_direction(-1)
+    span = np.rad2deg(th.max() - th.min())
+    if 1 < span <= 360:
+        ax_p.set_thetamin(np.rad2deg(th.min()))
+        ax_p.set_thetamax(np.rad2deg(th.max()))
+    rmax = np.nanmax(In) if np.isfinite(In).any() else 1.0
+    ax_p.set_rlim(0, max(1.05, rmax * 1.05))
+    ax_p.grid(lw=0.3 * scale, alpha=0.6)
+    ax_p.spines['polar'].set_linewidth(0.5 * scale)
+    ax_p.tick_params(pad=1 * scale)
+    ax_p.set_title('Normalized integrated intensity', pad=4 * scale)
+
+    panel_labels([ax_m, ax_i], dx=-30, scale=scale)
+    panel_labels([ax_p], start='c', dx=-4, scale=scale)
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  Analysis canvas  (placed on the RIGHT panel by MainWindow)
 # ═══════════════════════════════════════════════════════════════════
 
 class ScanAnalysisCanvas(QWidget):
     """
-    Standalone widget: toolbar + matplotlib figure with
-    waterfall / heatmap / integrated+electrical subplots.
+    Toolbar + matplotlib figure with the angle–wavelength map and the
+    linear and polar angular-dispersion plots (see :func:`draw_analysis`).
 
     MainWindow places this in the right panel alongside PlotPanel
     (inside a QStackedWidget).
@@ -155,14 +250,14 @@ class ScanAnalysisCanvas(QWidget):
         super().__init__(parent)
         self._data = None
         self._show_raw = False
-        self._colorbars = []
+        self._normal = 0.0
         self._build_ui()
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        self.fig = Figure(constrained_layout=True)
+        self.fig = Figure(layout='constrained', facecolor='white')
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -179,109 +274,37 @@ class ScanAnalysisCanvas(QWidget):
 
     def set_show_raw(self, raw: bool):
         self._show_raw = raw
-        if self._data is not None:
-            self._redraw()
+        self._redraw()
+
+    def set_normal_angle(self, angle: float):
+        self._normal = angle
+        self._redraw()
 
     def clear(self):
         self._data = None
-        self._remove_colorbars()
         self.fig.clear()
         self.canvas.draw_idle()
+
+    def export(self, path: str):
+        """Save the figure at Nature double-column size (183 mm wide)."""
+        if self._data is None:
+            raise RuntimeError("No scan loaded")
+        with matplotlib.rc_context(nature_rc(1.0)):
+            fig = Figure(figsize=(DOUBLE, 120 * MM), layout='constrained')
+            draw_analysis(fig, self._data, self._show_raw, self._normal)
+            fig.savefig(path)
 
     # ── Internals ─────────────────────────────────────────────────
-    def _remove_colorbars(self):
-        for cb in self._colorbars:
-            try:
-                cb.remove()
-            except Exception:
-                pass
-        self._colorbars.clear()
-
     def _redraw(self):
-        d = self._data
-        if d is None:
+        if self._data is None:
             return
-
-        sp  = d['raw'] if self._show_raw else d['corr']
-        wl  = d['wl']
-        ang = d['ang']
-        n   = len(ang)
-        tag = 'Raw counts' if self._show_raw else 'Corrected counts'
-
-        self._remove_colorbars()
         self.fig.clear()
-
-        gs = GridSpec(3, 1, figure=self.fig, height_ratios=[1, 1, 1])
-        ax_wf  = self.fig.add_subplot(gs[0])
-        ax_hm  = self.fig.add_subplot(gs[1])
-        ax_int = self.fig.add_subplot(gs[2])
-
-        cmap_name = 'plasma'
-        colors = matplotlib.cm.get_cmap(cmap_name)(
-            np.linspace(0, 1, n))
-
-        # ── 1. Waterfall ──────────────────────────────────────────
-        for i in range(n):
-            ax_wf.plot(wl, sp[i], color=colors[i], lw=0.8, alpha=0.8)
-        ax_wf.set_xlabel('Wavelength (nm)')
-        ax_wf.set_ylabel(tag)
-        ax_wf.set_title('Spectra per angle', fontsize=10)
-        ax_wf.grid(True, alpha=0.25)
-
-        sm = matplotlib.cm.ScalarMappable(
-            cmap=cmap_name, norm=Normalize(ang.min(), ang.max()))
-        sm.set_array([])
-        cb1 = self.fig.colorbar(sm, ax=ax_wf, label='Angle (°)',
-                                pad=0.02)
-        self._colorbars.append(cb1)
-
-        # ── 2. Heatmap ───────────────────────────────────────────
-        extent = [wl[0], wl[-1], ang[-1], ang[0]]
-        im = ax_hm.imshow(sp, aspect='auto', cmap='inferno',
-                          origin='upper', extent=extent)
-        ax_hm.set_xlabel('Wavelength (nm)')
-        ax_hm.set_ylabel('Angle (°)')
-        ax_hm.set_title('Angle–wavelength heatmap', fontsize=10)
-        cb2 = self.fig.colorbar(im, ax=ax_hm, label=tag, pad=0.02)
-        self._colorbars.append(cb2)
-
-        # ── 3. Integrated + Electrical ────────────────────────────
-        integrated = sp.sum(axis=1)
-
-        ln1 = ax_int.plot(ang, integrated, 'o-', color='#2980b9',
-                          lw=1.5, ms=4, label='Integrated counts')
-
-        if d['comp'].any():
-            ax_int.scatter(ang[d['comp']], integrated[d['comp']],
-                           color='red', marker='x', s=60, zorder=5,
-                           label='Compliance')
-            for a in ang[d['comp']]:
-                ax_int.axvline(a, color='red', ls='--', alpha=0.3)
-
-        ax_int.set_xlabel('Angle (°)')
-        ax_int.set_ylabel('Integrated counts', color='#2980b9')
-        ax_int.tick_params(axis='y', labelcolor='#2980b9')
-        ax_int.grid(True, alpha=0.25)
-        ax_int.set_title('Integrated spectrum & electrical',
-                         fontsize=10)
-
-        has_elec = np.any(d['v'] != 0) or np.any(d['i'] != 0)
-        if has_elec:
-            ax_el = ax_int.twinx()
-            ln2 = ax_el.plot(ang, d['v'], 's-', color='#27ae60',
-                             lw=1.2, ms=3, label='Voltage (V)')
-            ln3 = ax_el.plot(ang, d['i'] * 1e3, '^-', color='#e67e22',
-                             lw=1.2, ms=3, label='Current (mA)')
-            ax_el.set_ylabel('V  /  mA')
-            lns = ln1 + ln2 + ln3
-            ax_int.legend(lns, [l.get_label() for l in lns],
-                          loc='upper left', fontsize=8)
-        else:
-            ax_int.legend(loc='upper left', fontsize=8)
-
-        self.fig.suptitle(os.path.basename(d['path']),
-                          fontsize=11, fontweight='bold')
-        self.canvas.draw_idle()
+        with matplotlib.rc_context(nature_rc(SCREEN_SCALE)):
+            draw_analysis(self.fig, self._data, self._show_raw,
+                          self._normal, scale=SCREEN_SCALE)
+            self.fig.suptitle(os.path.basename(self._data['path']),
+                              fontweight='bold')
+            self.canvas.draw_idle()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -353,6 +376,27 @@ class PlotTab(QWidget):
         self.chk_raw = QCheckBox("Show raw counts (instead of corrected)")
         self.chk_raw.toggled.connect(self._on_raw_toggled)
         opt_lay.addWidget(self.chk_raw)
+
+        form = QFormLayout()
+        self.spn_normal = QDoubleSpinBox()
+        self.spn_normal.setRange(-180.0, 180.0)
+        self.spn_normal.setDecimals(1)
+        self.spn_normal.setSingleStep(0.5)
+        self.spn_normal.setSuffix(" °")
+        self.spn_normal.setToolTip(
+            "Goniometer angle of the surface normal: the polar plot is "
+            "centred and normalised here, and the Lambertian reference "
+            "is cos(θ − normal)")
+        self.spn_normal.valueChanged.connect(
+            self.analysis_canvas.set_normal_angle)
+        form.addRow("Normal angle:", self.spn_normal)
+        opt_lay.addLayout(form)
+
+        self.btn_export = QPushButton("Export figure…")
+        self.btn_export.setToolTip(
+            "Save at Nature double-column size (183 mm) as PDF, PNG or SVG")
+        self.btn_export.clicked.connect(self._export_figure)
+        opt_lay.addWidget(self.btn_export)
 
         lay.addWidget(opt_grp)
 
@@ -465,6 +509,22 @@ class PlotTab(QWidget):
 
     def _on_raw_toggled(self, checked):
         self.analysis_canvas.set_show_raw(checked)
+
+    def _export_figure(self):
+        path = self.cmb_files.currentData()
+        if path is None:
+            return
+        default = os.path.splitext(path)[0] + "_analysis.pdf"
+        out, _ = QFileDialog.getSaveFileName(
+            self, "Export Figure", default,
+            "PDF (*.pdf);;PNG (*.png);;SVG (*.svg)")
+        if not out:
+            return
+        try:
+            self.analysis_canvas.export(out)
+            log.info("Figure saved to %s", out)
+        except Exception as e:
+            QMessageBox.warning(self, "Export Failed", str(e))
 
     # ── Programmatic API (called by MainWindow after scan) ────────
     def load_and_show(self, path: str):
